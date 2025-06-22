@@ -38,7 +38,7 @@ export const defaultClient = {
 	name: '',
 	business_type: '',
 	contact_email: '',
-	contact_phone: '022',
+	contact_phone: '',
 	location_country: '',
 	location_city: '',
 	notes: ''
@@ -46,11 +46,11 @@ export const defaultClient = {
 
 export const defaultProject = {
 	name: '',
-	plan: 'free',
+	plan: '',
 	addons: [],
 	llm_model: 'gpt-4o-mini',
 	temperature: 0.3,
 	maxHistoryMessages: 4,
 	system_prompt: '',
 	status: 'active'
-}; 
+};

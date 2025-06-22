@@ -19,12 +19,10 @@
 		defaultProject
 	} from '$lib/utils.js';
 
-	// Initialize Supabase client
 	const supabase = createSupabaseClient(
-		'https://zlrskwyjeonufwfulosn.supabase.co',
-		'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscnNrd3lqZW9udWZ3ZnVsb3NuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA1MTg4OTgsImV4cCI6MjA2NjA5NDg5OH0.8WVGPf8mSCZYeWvkmkaS4gAI2_WtJ0e4t2zNyC2y5js'
+		import.meta.env.VITE_SUPABASE_URL,
+		import.meta.env.VITE_SUPABASE_ANON_KEY
 	);
-
 	// State management
 	let clients = [];
 	let selectedClientId = '';
@@ -583,7 +581,7 @@
 					{selectedProject}
 					bind:chunkSize
 					bind:embeddingModel
-					onFileSelect={onFileSelect}
+					{onFileSelect}
 					onUpload={uploadDoc}
 					onDeleteDocument={(docName) =>
 						requestConfirmation(

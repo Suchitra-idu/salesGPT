@@ -4,25 +4,12 @@ import { json } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import { PDFExtract } from 'pdf.js-extract';
-// import { env } from '$env/dynamic/private';
+import { env } from '$env/dynamic/private';
 
-// const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-// 	auth: { persistSession: false }
-// });
-// const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const sb = createClient(
-	'https://zlrskwyjeonufwfulosn.supabase.co',
-	'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscnNrd3lqZW9udWZ3ZnVsb3NuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA1MTg4OTgsImV4cCI6MjA2NjA5NDg5OH0.8WVGPf8mSCZYeWvkmkaS4gAI2_WtJ0e4t2zNyC2y5js',
-	{
-		auth: { persistSession: false }
-	}
-);
-const openai = new OpenAI({
-	apiKey:
-		'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'
+const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+	auth: { persistSession: false }
 });
-// const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
 async function extractPdfText(buffer) {
 	const pdfExtract = new PDFExtract();
@@ -53,10 +40,13 @@ export async function POST({ request }) {
 		if (file.type === 'application/pdf') {
 			const buffer = Buffer.from(await file.arrayBuffer());
 			text = await extractPdfText(buffer);
-		} else if (file.type === 'text/plain' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+		} else if (
+			file.type === 'text/plain' ||
+			file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+		) {
 			text = await file.text();
 		} else {
-			return json({ error: `Unsupported file type: ${file.type}`}, { status: 400 });
+			return json({ error: `Unsupported file type: ${file.type}` }, { status: 400 });
 		}
 
 		const doc_name = file.name;

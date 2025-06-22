@@ -1,6 +1,6 @@
 <script>
 	import LoadingSpinner from './LoadingSpinner.svelte';
-	
+
 	export let project = {
 		name: '',
 		plan: 'free',
@@ -37,17 +37,15 @@
 		</div>
 
 		<div>
-			<label for="plan" class="mb-1 block text-sm font-medium text-gray-700">
-				Plan
-			</label>
+			<label for="plan" class="mb-1 block text-sm font-medium text-gray-700"> Plan </label>
 			<select
 				id="plan"
 				class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
 				bind:value={project.plan}
 				disabled={loading}
 			>
-				<option value="free">Free</option>
 				<option value="basic">Basic</option>
+				<option value="medium">Medium</option>
 				<option value="premium">Premium</option>
 			</select>
 		</div>
@@ -102,9 +100,7 @@
 		</div>
 
 		<div>
-			<label for="status" class="mb-1 block text-sm font-medium text-gray-700">
-				Status
-			</label>
+			<label for="status" class="mb-1 block text-sm font-medium text-gray-700"> Status </label>
 			<select
 				id="status"
 				class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -120,10 +116,8 @@
 		</div>
 
 		<div class="md:col-span-2">
-			<label class="mb-2 block text-sm font-medium text-gray-700">
-				Addons (Future Features)
-			</label>
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+			<label class="mb-2 block text-sm font-medium text-gray-700"> Addons (Future Features) </label>
+			<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
 				<label class="flex items-center space-x-2">
 					<input
 						type="checkbox"
@@ -133,14 +127,14 @@
 							if (e.target.checked) {
 								project.addons = [...project.addons, 'fine-tuning'];
 							} else {
-								project.addons = project.addons.filter(addon => addon !== 'fine-tuning');
+								project.addons = project.addons.filter((addon) => addon !== 'fine-tuning');
 							}
 						}}
 						disabled={loading}
 					/>
 					<span class="text-sm text-gray-700">Fine-tuning</span>
 				</label>
-				
+
 				<label class="flex items-center space-x-2">
 					<input
 						type="checkbox"
@@ -150,14 +144,14 @@
 							if (e.target.checked) {
 								project.addons = [...project.addons, 'multi-language'];
 							} else {
-								project.addons = project.addons.filter(addon => addon !== 'multi-language');
+								project.addons = project.addons.filter((addon) => addon !== 'multi-language');
 							}
 						}}
 						disabled={loading}
 					/>
 					<span class="text-sm text-gray-700">Multi-language Support</span>
 				</label>
-				
+
 				<label class="flex items-center space-x-2">
 					<input
 						type="checkbox"
@@ -167,14 +161,14 @@
 							if (e.target.checked) {
 								project.addons = [...project.addons, 'media-support'];
 							} else {
-								project.addons = project.addons.filter(addon => addon !== 'media-support');
+								project.addons = project.addons.filter((addon) => addon !== 'media-support');
 							}
 						}}
 						disabled={loading}
 					/>
 					<span class="text-sm text-gray-700">Video/Image Support</span>
 				</label>
-				
+
 				<label class="flex items-center space-x-2">
 					<input
 						type="checkbox"
@@ -184,7 +178,7 @@
 							if (e.target.checked) {
 								project.addons = [...project.addons, 'tool-access'];
 							} else {
-								project.addons = project.addons.filter(addon => addon !== 'tool-access');
+								project.addons = project.addons.filter((addon) => addon !== 'tool-access');
 							}
 						}}
 						disabled={loading}
@@ -240,4 +234,4 @@
 			</button>
 		{/if}
 	</div>
-</div> 
+</div>

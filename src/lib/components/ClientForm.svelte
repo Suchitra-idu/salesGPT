@@ -1,11 +1,11 @@
 <script>
 	import LoadingSpinner from './LoadingSpinner.svelte';
-	
+
 	export let client = {
 		name: '',
 		business_type: '',
 		contact_email: '',
-		contact_phone: '022',
+		contact_phone: '',
 		location_country: '',
 		location_city: '',
 		notes: ''
@@ -50,9 +50,7 @@
 		</div>
 
 		<div>
-			<label for="country" class="mb-1 block text-sm font-medium text-gray-700">
-				Country
-			</label>
+			<label for="country" class="mb-1 block text-sm font-medium text-gray-700"> Country </label>
 			<input
 				id="country"
 				type="text"
@@ -64,9 +62,7 @@
 		</div>
 
 		<div>
-			<label for="city" class="mb-1 block text-sm font-medium text-gray-700">
-				City
-			</label>
+			<label for="city" class="mb-1 block text-sm font-medium text-gray-700"> City </label>
 			<input
 				id="city"
 				type="text"
@@ -91,9 +87,7 @@
 			/>
 		</div>
 		<div class="md:col-span-2">
-			<label for="tel" class="mb-1 block text-sm font-medium text-gray-700">
-				Contact Number
-			</label>
+			<label for="tel" class="mb-1 block text-sm font-medium text-gray-700"> Contact Number </label>
 			<input
 				id="tel"
 				type="tel"
@@ -105,9 +99,7 @@
 		</div>
 
 		<div class="md:col-span-2">
-			<label for="client-notes" class="mb-1 block text-sm font-medium text-gray-700">
-				Notes
-			</label>
+			<label for="client-notes" class="mb-1 block text-sm font-medium text-gray-700"> Notes </label>
 			<textarea
 				id="client-notes"
 				rows="4"
@@ -150,4 +142,4 @@
 			</button>
 		{/if}
 	</div>
-</div> 
+</div>
