@@ -1,7 +1,23 @@
 <script>
 	import { onMount } from 'svelte';
 	import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-	import { Pencil, Trash2 } from 'lucide-svelte';
+
+	// Import components
+	import StatusMessage from '$lib/components/StatusMessage.svelte';
+	import NavigationButtons from '$lib/components/NavigationButtons.svelte';
+	import ClientsSection from '$lib/components/ClientsSection.svelte';
+	import ProjectsSection from '$lib/components/ProjectsSection.svelte';
+	import DocumentsSection from '$lib/components/DocumentsSection.svelte';
+	import ConfirmationModal from '$lib/components/ConfirmationModal.svelte';
+
+	// Import utilities
+	import {
+		validateClient,
+		validateProject,
+		formatDate,
+		defaultClient,
+		defaultProject
+	} from '$lib/utils.js';
 
 	// Initialize Supabase client
 	const supabase = createSupabaseClient(
@@ -13,32 +29,16 @@
 	let clients = [];
 	let selectedClientId = '';
 	let selectedClient = null;
-	let newClient = {
-		name: '',
-		business_type: '',
-		contact_email: '',
-		contact_phone: '022',
-		location_country: '',
-		location_city: ''
-	};
+	let newClient = { ...defaultClient };
 
 	let projects = [];
 	let selectedProjectId = '';
 	let selectedProject = null;
-	let newProject = {
-		name: '',
-		plan: 'free',
-		addons: [],
-		llm_model: 'gpt-4o-mini',
-		temperature: 0.3,
-		maxHistoryMessages: 4,
-		system_prompt: '',
-		status: 'Active'
-	};
+	let newProject = { ...defaultProject };
 
 	let documents = [];
 	let file;
-	let status = '';
+	let status = null;
 	let loading = {
 		clients: false,
 		projects: false,
@@ -55,28 +55,38 @@
 		project: false
 	};
 
-	// Validation functions
-	function validateClient(client) {
-		const errors = [];
-		if (!client.name?.trim()) errors.push('Client name is required');
-		if (!client.contact_email?.trim()) errors.push('Contact email is required');
-		if (client.contact_email && !isValidEmail(client.contact_email)) {
-			errors.push('Please enter a valid email address');
-		}
-		return errors;
+	// Navigation states
+	let projectWindow = false;
+	let clientWindow = true;
+	let documentWindow = false;
+
+	// Modal state
+	let showConfirmation = false;
+	let confirmationConfig = {
+		title: '',
+		message: '',
+		onConfirm: () => {}
+	};
+	let resolveConfirmation;
+
+	let chunkSize = 3200;
+	let embeddingModel = 'text-embedding-3-small';
+
+	function requestConfirmation(title, message, onConfirm) {
+		confirmationConfig = { title, message, onConfirm };
+		showConfirmation = true;
 	}
 
-	function validateProject(project) {
-		const errors = [];
-		if (!project.name?.trim()) errors.push('Project name is required');
-		if (project.temperature < 0 || project.temperature > 2) {
-			errors.push('Temperature must be between 0 and 2');
+	function handleConfirm() {
+		if (typeof confirmationConfig.onConfirm === 'function') {
+			confirmationConfig.onConfirm();
 		}
-		return errors;
+		resetConfirmation();
 	}
 
-	function isValidEmail(email) {
-		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+	function resetConfirmation() {
+		showConfirmation = false;
+		confirmationConfig = { title: '', message: '', onConfirm: () => {} };
 	}
 
 	// Data loading functions
@@ -169,6 +179,7 @@
 
 	// CRUD operations
 	async function saveClient() {
+		console.log('saveClient called', newClient, editMode.client);
 		const errors = validateClient(newClient);
 		if (errors.length > 0) {
 			showError(errors.join(', '));
@@ -178,8 +189,9 @@
 		loading.createClient = true;
 		try {
 			let data, error;
+			const isEditing = editMode.client;
 
-			if (editMode.client) {
+			if (isEditing) {
 				// Update existing client
 				const result = await supabase
 					.from('clients')
@@ -202,17 +214,10 @@
 			selectedClient = saved;
 
 			// Reset form
-			newClient = {
-				name: '',
-				business_type: '',
-				contact_email: '',
-				contact_phone: '022',
-				location_country: '',
-				location_city: ''
-			};
+			newClient = { ...defaultClient };
 			editMode.client = false;
 
-			showSuccess(`Client ${editMode.client ? 'updated' : 'created'} successfully`);
+			showSuccess(`Client ${isEditing ? 'updated' : 'created'} successfully`);
 			await loadClients();
 		} catch (error) {
 			showError(`Failed to ${editMode.client ? 'update' : 'create'} client: ` + error.message);
@@ -222,6 +227,7 @@
 	}
 
 	async function saveProject() {
+		console.log('saveProject called', newProject, editMode.project);
 		if (!selectedClientId) {
 			showError('Please select a client first');
 			return;
@@ -236,12 +242,23 @@
 		loading.createProject = true;
 		try {
 			let data, error;
+			const isEditing = editMode.project;
 
-			if (editMode.project) {
+			// Create a safe payload for Supabase, removing fields that might not be in the DB
+			const projectPayload = { ...newProject };
+			delete projectPayload.maxHistoryMessages;
+			// The addons field is valid in the database, so we'll keep it
+
+			// Ensure status is included and has a valid value
+			if (!projectPayload.status) {
+				projectPayload.status = 'active';
+			}
+
+			if (isEditing) {
 				// Update existing project
 				const result = await supabase
 					.from('projects')
-					.update(newProject)
+					.update(projectPayload)
 					.eq('id', selectedProjectId)
 					.select();
 				data = result.data;
@@ -250,7 +267,7 @@
 				// Create new project
 				const result = await supabase
 					.from('projects')
-					.insert([{ ...newProject, client_id: selectedClientId }])
+					.insert([{ ...projectPayload, client_id: selectedClientId }])
 					.select();
 				data = result.data;
 				error = result.error;
@@ -262,18 +279,10 @@
 			selectedProject = data[0];
 
 			// Reset form
-			newProject = {
-				name: '',
-				plan: 'free',
-				llm_model: 'gpt-4o-mini',
-				temperature: 0.3,
-				maxHistoryMessages: 4,
-				system_prompt: '',
-				status: 'Active'
-			};
+			newProject = { ...defaultProject };
 			editMode.project = false;
 
-			showSuccess(`Project ${editMode.project ? 'updated' : 'created'} successfully`);
+			showSuccess(`Project ${isEditing ? 'updated' : 'created'} successfully`);
 			await loadProjects(selectedClientId);
 		} catch (error) {
 			showError(`Failed to ${editMode.project ? 'update' : 'create'} project: ` + error.message);
@@ -284,55 +293,33 @@
 
 	// Edit functions
 	function editClient() {
+		console.log('editClient called', selectedClient);
 		if (!selectedClient) return;
-
 		newClient = { ...selectedClient };
 		editMode.client = true;
 	}
 
 	function editProject() {
+		console.log('editProject called', selectedProject);
 		if (!selectedProject) return;
-
 		newProject = { ...selectedProject };
 		editMode.project = true;
 	}
 
 	function cancelEdit(type) {
+		console.log('cancelEdit called', type);
 		if (type === 'client') {
-			newClient = {
-				name: '',
-				business_type: '',
-				contact_email: '',
-				contact_phone: '022',
-				location_country: '',
-				location_city: ''
-			};
+			newClient = { ...defaultClient };
 			editMode.client = false;
 		} else if (type === 'project') {
-			newProject = {
-				name: '',
-				plan: 'free',
-				llm_model: 'gpt-4o-mini',
-				temperature: 0.3,
-				maxHistoryMessages: 4,
-				system_prompt: '',
-				status: 'Active'
-			};
+			newProject = { ...defaultProject };
 			editMode.project = false;
 		}
 	}
 
 	// Delete functions
 	async function deleteClient() {
-		if (
-			!selectedClientId ||
-			!confirm(
-				'Are you sure you want to delete this client? This will also delete all associated projects and documents.'
-			)
-		) {
-			return;
-		}
-
+		console.log('deleteClient called', selectedClientId);
 		loading.delete = true;
 		try {
 			const { error } = await supabase.from('clients').delete().eq('id', selectedClientId);
@@ -355,15 +342,7 @@
 	}
 
 	async function deleteProject() {
-		if (
-			!selectedProjectId ||
-			!confirm(
-				'Are you sure you want to delete this project? This will also delete all associated documents.'
-			)
-		) {
-			return;
-		}
-
+		console.log('deleteProject called', selectedProjectId);
 		loading.delete = true;
 		try {
 			const { error } = await supabase.from('projects').delete().eq('id', selectedProjectId);
@@ -383,10 +362,7 @@
 	}
 
 	async function deleteDocument(docName) {
-		if (!confirm(`Are you sure you want to delete all versions of "${docName}"?`)) {
-			return;
-		}
-
+		console.log('deleteDocument called', docName);
 		loading.delete = true;
 		try {
 			const { error } = await supabase
@@ -425,15 +401,15 @@
 
 		loading.upload = true;
 		try {
-			const response = await fetch('/api/upload', {
+			const formData = new FormData();
+			formData.append('file', file);
+			formData.append('project_id', selectedProjectId);
+			formData.append('chunk_size', chunkSize);
+			formData.append('embedding_model', embeddingModel);
+
+			const response = await fetch('/api/upload-text', {
 				method: 'POST',
-				body: file,
-				headers: {
-					'Content-Type': file.type,
-					'x-file-name': file.name,
-					'x-client-id': selectedClientId,
-					'x-project-id': selectedProjectId
-				}
+				body: formData
 			});
 
 			if (!response.ok) {
@@ -487,31 +463,18 @@
 
 	// Status management
 	function showSuccess(message) {
+		console.log('showSuccess called', message);
 		status = { type: 'success', message };
-		setTimeout(() => (status = ''), 5000);
+		setTimeout(() => (status = null), 5000);
 	}
 
 	function showError(message) {
+		console.log('showError called', message);
 		status = { type: 'error', message };
-		setTimeout(() => (status = ''), 8000);
+		setTimeout(() => (status = null), 8000);
 	}
 
-	function formatDate(dateString) {
-		return new Date(dateString).toLocaleDateString('en-US', {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
-	}
-
-	onMount(loadClients);
-
-	let projectWindow = false;
-	let clientWindow = true;
-	let documentWindow = false;
-
+	// Navigation functions
 	function forward() {
 		if (clientWindow && selectedClientId) {
 			clientWindow = false;
@@ -531,11 +494,21 @@
 			clientWindow = true;
 		}
 	}
+
+	onMount(loadClients);
 </script>
 
 <svelte:head>
 	<title>RAG Admin Dashboard</title>
 </svelte:head>
+
+<ConfirmationModal
+	bind:show={showConfirmation}
+	title={confirmationConfig.title}
+	message={confirmationConfig.message}
+	on:confirm={handleConfirm}
+	on:cancel={resetConfirmation}
+/>
 
 <div class="min-h-screen bg-gray-50">
 	<!-- Header -->
@@ -549,742 +522,77 @@
 	<main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
 		<!-- Status Messages -->
 		{#if status}
-			<div
-				class="mb-6 rounded-md p-4 {status.type === 'success'
-					? 'border border-green-200 bg-green-50 text-green-800'
-					: 'border border-red-200 bg-red-50 text-red-800'}"
-			>
-				<div class="flex">
-					<div class="flex-shrink-0">
-						{#if status.type === 'success'}
-							<svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-								<path
-									fill-rule="evenodd"
-									d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-									clip-rule="evenodd"
-								/>
-							</svg>
-						{:else}
-							<svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-								<path
-									fill-rule="evenodd"
-									d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-									clip-rule="evenodd"
-								/>
-							</svg>
-						{/if}
-					</div>
-					<div class="ml-3">
-						<p class="text-sm font-medium">{status.message}</p>
-					</div>
-				</div>
-			</div>
+			<StatusMessage {status} />
 		{/if}
 
 		<div class="space-y-8">
-			<button
-				on:click={back}
-				class="inline-flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow transition-all hover:bg-gray-200"
-			>
-				← Back
-			</button>
-			<button
-				on:click={forward}
-				class="inline-flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 shadow transition-all hover:bg-gray-200"
-			>
-				Forward →
-			</button>
+			<!-- Navigation Buttons -->
+			<NavigationButtons onBack={back} onForward={forward} />
+
 			<!-- Clients Section -->
 			{#if clientWindow}
-				<section class="rounded-lg border bg-white shadow-sm">
-					<div
-						class="flex flex-col border-b border-gray-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"
-					>
-						<div>
-							<h2 class="text-xl font-semibold text-gray-900">Clients</h2>
-							<p class="mt-1 text-sm text-gray-600">Manage your business clients</p>
-						</div>
-
-						{#if selectedClient}
-							<div class="mt-4 flex gap-2 sm:mt-0">
-								<button
-									type="button"
-									class="inline-flex items-center gap-1 rounded-md bg-yellow-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-yellow-600 focus:ring-2 focus:ring-yellow-400 focus:outline-none"
-									on:click={editClient}
-								>
-									<Pencil class="h-4 w-4" />
-									<span>Edit</span>
-								</button>
-
-								<button
-									type="button"
-									class="inline-flex items-center gap-1 rounded-md bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-									on:click={deleteClient}
-									disabled={loading.delete}
-								>
-									{#if loading.delete}
-										<svg
-											class="h-4 w-4 animate-spin text-white"
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-										>
-											<circle
-												class="opacity-25"
-												cx="12"
-												cy="12"
-												r="10"
-												stroke="currentColor"
-												stroke-width="4"
-											></circle>
-											<path
-												class="opacity-75"
-												fill="currentColor"
-												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-											></path>
-										</svg>
-										<span>Deleting...</span>
-									{:else}
-										<Trash2 class="h-4 w-4" />
-										<span>Delete</span>
-									{/if}
-								</button>
-							</div>
-						{/if}
-					</div>
-
-					<div class="space-y-6 p-6">
-						<!-- Client Selection -->
-						{#if clients.length > 0}
-							<div class="flex flex-col gap-4 sm:flex-row">
-								<div class="flex-1">
-									<label for="client-select" class="mb-2 block text-sm font-medium text-gray-700">
-										Select Client
-									</label>
-									<select
-										id="client-select"
-										bind:value={selectedClientId}
-										on:change={onClientSelect}
-										disabled={loading.clients}
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100"
-									>
-										<option value="">Choose a client...</option>
-										{#each clients as client}
-											<option value={client.id}
-												>{client.name} ({client.business_type || 'No type'})</option
-											>
-										{/each}
-									</select>
-								</div>
-
-								{#if selectedClient}
-									<div class="flex-1 rounded-md bg-gray-50 p-4">
-										<h4 class="mb-2 font-medium text-gray-900">Client Details</h4>
-										<div class="space-y-1 text-sm text-gray-600">
-											<p>
-												<span class="font-medium">Type:</span>
-												{selectedClient.business_type || 'Not specified'}
-											</p>
-											<p>
-												<span class="font-medium">Location:</span>
-												{selectedClient.location_city
-													? `${selectedClient.location_city}, ${selectedClient.location_country}`
-													: 'Not specified'}
-											</p>
-											<p><span class="font-medium">Email:</span> {selectedClient.contact_email}</p>
-										</div>
-									</div>
-								{/if}
-							</div>
-						{:else if !loading.clients}
-							<div class="py-8 text-center text-gray-500">
-								<p>No clients found. Create your first client below.</p>
-							</div>
-						{/if}
-
-						<!-- Create New Client -->
-						<div class="border-t pt-6">
-							<h3 class="mb-4 text-lg font-medium text-gray-900">Add New Client</h3>
-							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-								<div>
-									<label for="client-name" class="mb-1 block text-sm font-medium text-gray-700">
-										Client Name *
-									</label>
-									<input
-										id="client-name"
-										type="text"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="Enter client name"
-										bind:value={newClient.name}
-										disabled={loading.createClient}
-									/>
-								</div>
-
-								<div>
-									<label for="business-type" class="mb-1 block text-sm font-medium text-gray-700">
-										Business Type
-									</label>
-									<input
-										id="business-type"
-										type="text"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="e.g., E-commerce, SaaS, Healthcare"
-										bind:value={newClient.business_type}
-										disabled={loading.createClient}
-									/>
-								</div>
-
-								<div>
-									<label for="country" class="mb-1 block text-sm font-medium text-gray-700">
-										Country
-									</label>
-									<input
-										id="country"
-										type="text"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="Enter country"
-										bind:value={newClient.location_country}
-										disabled={loading.createClient}
-									/>
-								</div>
-
-								<div>
-									<label for="city" class="mb-1 block text-sm font-medium text-gray-700">
-										City
-									</label>
-									<input
-										id="city"
-										type="text"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="Enter city"
-										bind:value={newClient.location_city}
-										disabled={loading.createClient}
-									/>
-								</div>
-
-								<div class="md:col-span-2">
-									<label for="email" class="mb-1 block text-sm font-medium text-gray-700">
-										Contact Email *
-									</label>
-									<input
-										id="email"
-										type="email"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="Enter contact email"
-										bind:value={newClient.contact_email}
-										disabled={loading.createClient}
-									/>
-								</div>
-								<div class="md:col-span-2">
-									<label for="email" class="mb-1 block text-sm font-medium text-gray-700">
-										Contact Number
-									</label>
-									<input
-										id="tel"
-										type="tel"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="Enter contact number"
-										bind:value={newClient.contact_phone}
-										disabled={loading.createClient}
-									/>
-								</div>
-							</div>
-
-							<button
-								type="button"
-								class="mt-4 inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-								on:click={saveClient}
-								disabled={loading.createClient}
-							>
-								{#if loading.createClient}
-									<svg
-										class="mr-2 -ml-1 h-4 w-4 animate-spin text-white"
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-									>
-										<circle
-											class="opacity-25"
-											cx="12"
-											cy="12"
-											r="10"
-											stroke="currentColor"
-											stroke-width="4"
-										></circle>
-										<path
-											class="opacity-75"
-											fill="currentColor"
-											d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-										></path>
-									</svg>
-									{editMode.client ? 'Updating...' : 'Creating...'}
-								{:else}
-									{editMode.client ? 'Update Client' : 'Create Client'}
-								{/if}
-							</button>
-
-							{#if editMode.client}
-								<button
-									type="button"
-									class="mt-4 ml-2 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
-									on:click={() => cancelEdit('client')}
-								>
-									Cancel
-								</button>
-							{/if}
-						</div>
-					</div>
-				</section>
+				<ClientsSection
+					{clients}
+					bind:selectedClientId
+					{selectedClient}
+					bind:newClient
+					{loading}
+					{editMode}
+					{onClientSelect}
+					onEditClient={editClient}
+					onDeleteClient={() =>
+						requestConfirmation(
+							'Delete Client?',
+							'Are you sure you want to delete this client? This will also delete all associated projects and documents.',
+							deleteClient
+						)}
+					onSaveClient={saveClient}
+					onCancelEdit={cancelEdit}
+				/>
 			{/if}
+
 			<!-- Projects Section -->
 			{#if projectWindow}
-				<section class="rounded-lg border bg-white shadow-sm">
-					<div
-						class="flex flex-col border-b border-gray-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"
-					>
-						<div>
-							<h2 class="text-xl font-semibold text-gray-900">Projects</h2>
-							<p class="mt-1 text-sm text-gray-600">
-								Manage projects for {selectedClient?.name}
-							</p>
-						</div>
-
-						{#if selectedProject}
-							<div class="mt-4 flex gap-2 sm:mt-0">
-								<button
-									type="button"
-									class="inline-flex items-center gap-1 rounded-md bg-yellow-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-yellow-600 focus:ring-2 focus:ring-yellow-400 focus:outline-none"
-									on:click={editProject}
-								>
-									<Pencil class="h-4 w-4" />
-									<span>Edit</span>
-								</button>
-
-								<button
-									type="button"
-									class="inline-flex items-center gap-1 rounded-md bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-									on:click={deleteProject}
-									disabled={loading.delete}
-								>
-									{#if loading.delete}
-										<svg
-											class="h-4 w-4 animate-spin text-white"
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-										>
-											<circle
-												class="opacity-25"
-												cx="12"
-												cy="12"
-												r="10"
-												stroke="currentColor"
-												stroke-width="4"
-											></circle>
-											<path
-												class="opacity-75"
-												fill="currentColor"
-												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-											></path>
-										</svg>
-										<span>Deleting...</span>
-									{:else}
-										<Trash2 class="h-4 w-4" />
-										<span>Delete</span>
-									{/if}
-								</button>
-							</div>
-						{/if}
-					</div>
-					<div class="space-y-6 p-6">
-						<!-- Project Selection -->
-						{#if projects.length > 0}
-							<div class="flex flex-col gap-4 lg:flex-row">
-								<div class="flex-1">
-									<label for="project-select" class="mb-2 block text-sm font-medium text-gray-700">
-										Select Project
-									</label>
-									<select
-										id="project-select"
-										bind:value={selectedProjectId}
-										on:change={onProjectSelect}
-										disabled={loading.projects}
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100"
-									>
-										<option value="">Choose a project...</option>
-										{#each projects as project}
-											<option value={project.id}>{project.name} ({project.plan})</option>
-										{/each}
-									</select>
-								</div>
-
-								{#if selectedProject}
-									<div class="flex-1 rounded-md bg-gray-50 p-4">
-										<h4 class="mb-2 font-medium text-gray-900">Project Details</h4>
-										<div class="space-y-1 text-sm text-gray-600">
-											<p>
-												<span class="font-medium">Plan:</span>
-												<span
-													class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 capitalize"
-													>{selectedProject.plan}</span
-												>
-											</p>
-											<p><span class="font-medium">Model:</span> {selectedProject.llm_model}</p>
-											<p>
-												<span class="font-medium">Temperature:</span>
-												{selectedProject.temperature}
-											</p>
-											{#if selectedProject.system_prompt}
-												<p>
-													<span class="font-medium">System Prompt:</span>
-													{selectedProject.system_prompt.substring(0, 100)}{selectedProject
-														.system_prompt.length > 100
-														? '...'
-														: ''}
-												</p>
-											{/if}
-										</div>
-									</div>
-								{/if}
-							</div>
-						{:else if !loading.projects}
-							<div class="py-8 text-center text-gray-500">
-								<p>No projects found for this client. Create your first project below.</p>
-							</div>
-						{/if}
-
-						<!-- Create New Project -->
-						<div class="border-t pt-6">
-							<h3 class="mb-4 text-lg font-medium text-gray-900">Add New Project</h3>
-							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-								<div>
-									<label for="project-name" class="mb-1 block text-sm font-medium text-gray-700">
-										Project Name *
-									</label>
-									<input
-										id="project-name"
-										type="text"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="Enter project name"
-										bind:value={newProject.name}
-										disabled={loading.createProject}
-									/>
-								</div>
-
-								<div>
-									<label for="plan" class="mb-1 block text-sm font-medium text-gray-700">
-										Plan
-									</label>
-									<select
-										id="plan"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										bind:value={newProject.plan}
-										disabled={loading.createProject}
-									>
-										<option value="free">Free</option>
-										<option value="pro">Pro</option>
-										<option value="enterprise">Enterprise</option>
-									</select>
-								</div>
-
-								<div>
-									<label for="llm-model" class="mb-1 block text-sm font-medium text-gray-700">
-										LLM Model
-									</label>
-									<select
-										id="llm-model"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										bind:value={newProject.llm_model}
-										disabled={loading.createProject}
-									>
-										<option value="gpt-4o-mini">GPT-4O Mini</option>
-										<option value="gpt-4o">GPT-4O</option>
-										<option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-									</select>
-								</div>
-
-								<div>
-									<label for="temperature" class="mb-1 block text-sm font-medium text-gray-700">
-										Temperature (0-2)
-									</label>
-									<input
-										id="temperature"
-										type="number"
-										step="0.1"
-										min="0"
-										max="2"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="0.3"
-										bind:value={newProject.temperature}
-										disabled={loading.createProject}
-									/>
-								</div>
-
-								<div class="md:col-span-2">
-									<label for="system-prompt" class="mb-1 block text-sm font-medium text-gray-700">
-										System Prompt
-									</label>
-									<textarea
-										id="system-prompt"
-										rows="4"
-										class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-										placeholder="Enter system prompt for the AI assistant..."
-										bind:value={newProject.system_prompt}
-										disabled={loading.createProject}
-									></textarea>
-								</div>
-							</div>
-
-							<button
-								type="button"
-								class="mt-4 inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-								on:click={saveProject}
-								disabled={loading.createProject}
-							>
-								{#if loading.createProject}
-									<svg
-										class="mr-2 -ml-1 h-4 w-4 animate-spin text-white"
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-									>
-										<circle
-											class="opacity-25"
-											cx="12"
-											cy="12"
-											r="10"
-											stroke="currentColor"
-											stroke-width="4"
-										></circle>
-										<path
-											class="opacity-75"
-											fill="currentColor"
-											d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-										></path>
-									</svg>
-									{editMode.project ? 'Updating...' : 'Creating...'}
-								{:else}
-									{editMode.project ? 'Update Project' : 'Create Project'}
-								{/if}
-							</button>
-
-							{#if editMode.project}
-								<button
-									type="button"
-									class="mt-4 ml-2 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
-									on:click={() => cancelEdit('project')}
-								>
-									Cancel
-								</button>
-							{/if}
-						</div>
-					</div>
-				</section>
+				<ProjectsSection
+					{projects}
+					bind:selectedProjectId
+					{selectedProject}
+					bind:newProject
+					{loading}
+					{editMode}
+					{selectedClient}
+					{onProjectSelect}
+					onEditProject={editProject}
+					onDeleteProject={() =>
+						requestConfirmation(
+							'Delete Project?',
+							'Are you sure you want to delete this project? This will also delete all associated documents.',
+							deleteProject
+						)}
+					onSaveProject={saveProject}
+					onCancelEdit={cancelEdit}
+				/>
 			{/if}
 
 			<!-- Documents Section -->
 			{#if documentWindow}
-				<section class="rounded-lg border bg-white shadow-sm">
-					<div class="border-b border-gray-200 px-6 py-4">
-						<h2 class="text-xl font-semibold text-gray-900">Documents</h2>
-						<p class="mt-1 text-sm text-gray-600">
-							Upload and manage documents for {selectedProject?.name}
-						</p>
-					</div>
-
-					<div class="space-y-6 p-6">
-						<!-- Document Upload -->
-						<div>
-							<label for="file-upload" class="mb-2 block text-sm font-medium text-gray-700">
-								Upload Document
-							</label>
-							<div class="flex items-center space-x-4">
-								<input
-									id="file-upload"
-									type="file"
-									accept=".pdf,.docx,.txt"
-									class="block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
-									on:change={onFileSelect}
-									disabled={loading.upload}
-								/>
-
-								<button
-									type="button"
-									class="inline-flex items-center rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-									on:click={uploadDoc}
-									disabled={loading.upload || !file}
-								>
-									{#if loading.upload}
-										<svg
-											class="mr-2 -ml-1 h-4 w-4 animate-spin text-white"
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-										>
-											<circle
-												class="opacity-25"
-												cx="12"
-												cy="12"
-												r="10"
-												stroke="currentColor"
-												stroke-width="4"
-											></circle>
-											<path
-												class="opacity-75"
-												fill="currentColor"
-												d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-											></path>
-										</svg>
-										Uploading...
-									{:else}
-										<svg class="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												stroke-width="2"
-												d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-											></path>
-										</svg>
-										Upload
-									{/if}
-								</button>
-							</div>
-							<p class="mt-2 text-sm text-gray-500">
-								Supported formats: PDF, DOCX, TXT. Maximum file size: 10MB
-							</p>
-						</div>
-
-						<!-- Document List -->
-						{#if documents.length > 0}
-							<div class="border-t pt-6">
-								<h3 class="mb-4 text-lg font-medium text-gray-900">Uploaded Documents</h3>
-								<div class="overflow-hidden bg-white shadow sm:rounded-md">
-									<ul class="divide-y divide-gray-200">
-										{#each documents as doc}
-											<li class="px-6 py-4">
-												<div class="flex items-center justify-between">
-													<div class="flex items-center">
-														<div class="flex-shrink-0">
-															<svg
-																class="h-8 w-8 text-gray-400"
-																fill="none"
-																stroke="currentColor"
-																viewBox="0 0 24 24"
-															>
-																<path
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	stroke-width="2"
-																	d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-																></path>
-															</svg>
-														</div>
-														<div class="ml-4">
-															<p class="text-sm font-medium text-gray-900">{doc.name}</p>
-															<p class="text-sm text-gray-500">
-																{doc.count} chunk{doc.count !== 1 ? 's' : ''} • Uploaded {formatDate(
-																	doc.latest
-																)}
-															</p>
-														</div>
-													</div>
-													<div class="flex items-center">
-														<span
-															class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800"
-														>
-															Processed
-														</span>
-													</div>
-												</div>
-											</li>
-											<button
-												type="button"
-												class="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-												on:click={() => deleteDocument(doc.name)}
-												disabled={loading.delete}
-											>
-												{#if loading.delete}
-													<svg
-														class="h-3 w-3 animate-spin text-white"
-														xmlns="http://www.w3.org/2000/svg"
-														fill="none"
-														viewBox="0 0 24 24"
-													>
-														<circle
-															class="opacity-25"
-															cx="12"
-															cy="12"
-															r="10"
-															stroke="currentColor"
-															stroke-width="4"
-														></circle>
-														<path
-															class="opacity-75"
-															fill="currentColor"
-															d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-														></path>
-													</svg>
-													<span>Deleting</span>
-												{:else}
-													<Trash2 class="h-3 w-3" />
-													<span>Delete</span>
-												{/if}
-											</button>
-										{/each}
-									</ul>
-								</div>
-							</div>
-						{:else if !loading.documents}
-							<div class="border-t pt-6">
-								<div class="py-8 text-center text-gray-500">
-									<svg
-										class="mx-auto h-12 w-12 text-gray-400"
-										stroke="currentColor"
-										fill="none"
-										viewBox="0 0 48 48"
-									>
-										<path
-											d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										/>
-									</svg>
-									<p class="mt-2">No documents uploaded yet</p>
-									<p class="text-sm">Upload your first document to get started</p>
-								</div>
-							</div>
-						{/if}
-
-						{#if loading.documents}
-							<div class="border-t pt-6">
-								<div class="py-8 text-center">
-									<svg
-										class="mx-auto h-8 w-8 animate-spin text-gray-400"
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-									>
-										<circle
-											class="opacity-25"
-											cx="12"
-											cy="12"
-											r="10"
-											stroke="currentColor"
-											stroke-width="4"
-										></circle>
-										<path
-											class="opacity-75"
-											fill="currentColor"
-											d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-										></path>
-									</svg>
-									<p class="mt-2 text-gray-500">Loading documents...</p>
-								</div>
-							</div>
-						{/if}
-					</div>
-				</section>
+				<DocumentsSection
+					{documents}
+					bind:file
+					{loading}
+					{selectedProject}
+					bind:chunkSize
+					bind:embeddingModel
+					onFileSelect={onFileSelect}
+					onUpload={uploadDoc}
+					onDeleteDocument={(docName) =>
+						requestConfirmation(
+							`Delete ${docName}?`,
+							`Are you sure you want to delete all versions of "${docName}"?`,
+							() => deleteDocument(docName)
+						)}
+					{formatDate}
+				/>
 			{/if}
 		</div>
 	</main>

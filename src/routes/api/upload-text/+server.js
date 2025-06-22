@@ -3,6 +3,8 @@
 import { json } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
+import { PDFExtract } from 'pdf.js-extract';
+// import { env } from '$env/dynamic/private';
 
 // const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
 // 	auth: { persistSession: false }
@@ -20,28 +22,50 @@ const openai = new OpenAI({
 	apiKey:
 		'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'
 });
+// const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+
+async function extractPdfText(buffer) {
+	const pdfExtract = new PDFExtract();
+	return new Promise((resolve, reject) => {
+		pdfExtract.extractBuffer(buffer, {}, (err, data) => {
+			if (err) return reject(err);
+			const text = data.pages
+				.map((page) => page.content.map((item) => item.str).join(' '))
+				.join('\n');
+			resolve(text);
+		});
+	});
+}
 
 export async function POST({ request }) {
 	try {
-		const { client_id, project_id, text, doc_name = 'untitled.txt' } = await request.json();
+		const formData = await request.formData();
+		const file = formData.get('file');
+		const projectId = formData.get('project_id');
+		const chunkSize = parseInt(formData.get('chunk_size') || '3200', 10);
+		const embeddingModel = formData.get('embedding_model') || 'text-embedding-3-small';
 
-		if (!client_id || !project_id || !text) return json({ error: 'Missing data' }, { status: 400 });
+		if (!file || !projectId) {
+			return json({ error: 'Missing file or project_id' }, { status: 400 });
+		}
 
-		// 1) optional: validate client/project link
-		// const { data: project, error: projErr } = await sb
-		// 	.from('projects')
-		// 	.select('id, client_id')
-		// 	.eq('id', project_id)
-		// 	.single();
+		let text;
+		if (file.type === 'application/pdf') {
+			const buffer = Buffer.from(await file.arrayBuffer());
+			text = await extractPdfText(buffer);
+		} else if (file.type === 'text/plain' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+			text = await file.text();
+		} else {
+			return json({ error: `Unsupported file type: ${file.type}`}, { status: 400 });
+		}
 
-		// if (projErr || !project || project.client_id !== client_id)
-		// 	return json({ error: 'Invalid project/client combo' }, { status: 403 });
+		const doc_name = file.name;
 
-		// 2) naive chunking
-		const CHARS_PER_CHUNK = 3200;
+		if (!text) return json({ error: 'Could not extract text from file' }, { status: 400 });
+
 		const chunks = [];
-		for (let i = 0; i < text.length; i += CHARS_PER_CHUNK) {
-			chunks.push(text.slice(i, i + CHARS_PER_CHUNK));
+		for (let i = 0; i < text.length; i += chunkSize) {
+			chunks.push(text.slice(i, i + chunkSize));
 		}
 
 		// 3) embed in batches
@@ -49,12 +73,12 @@ export async function POST({ request }) {
 		for (let i = 0; i < chunks.length; i += 100) {
 			const batch = chunks.slice(i, i + 100);
 			const { data: embeds } = await openai.embeddings.create({
-				model: 'text-embedding-3-small',
+				model: embeddingModel,
 				input: batch
 			});
 			embeds.forEach((e, j) => {
 				rows.push({
-					project_id,
+					project_id: projectId,
 					doc_name,
 					chunk_index: i + j,
 					content: batch[j],
