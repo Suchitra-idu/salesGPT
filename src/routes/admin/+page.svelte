@@ -1,6 +1,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+	import { supaFetch } from '$lib/supaFetch';
 
 	// Import components
 	import StatusMessage from '$lib/components/StatusMessage.svelte';
@@ -405,7 +406,7 @@
 			formData.append('chunk_size', chunkSize);
 			formData.append('embedding_model', embeddingModel);
 
-			const response = await fetch('/api/upload-text', {
+			const response = await supaFetch('/api/upload-text', {
 				method: 'POST',
 				body: formData
 			});

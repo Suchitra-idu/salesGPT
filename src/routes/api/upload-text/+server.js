@@ -6,9 +6,6 @@ import OpenAI from 'openai';
 import { PDFExtract } from 'pdf.js-extract';
 import { env } from '$env/dynamic/private';
 
-const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-	auth: { persistSession: false }
-});
 const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
 async function extractPdfText(buffer) {
@@ -25,6 +22,34 @@ async function extractPdfText(buffer) {
 }
 
 export async function POST({ request }) {
+	const authHeader = request.headers.get('authorization');
+	const jwt = authHeader?.replace('Bearer ', '');
+	if (!jwt) return json({ error: 'Unauthorized' }, { status: 401 });
+
+	const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+		global: { headers: { Authorization: `Bearer ${jwt}` } },
+		auth: { persistSession: false }
+	});
+
+	const {
+		data: { user },
+		error: userError
+	} = await supabase.auth.getUser();
+	if (userError || !user) return json({ error: 'Unauthorized' }, { status: 401 });
+
+	const { data: profile, error: profileError } = await supabase
+		.from('profiles')
+		.select('is_dev')
+		.eq('id', user.id)
+		.single();
+
+	if (profileError)
+		return json(
+			{ error: 'Database error checking profile', detail: profileError.message },
+			{ status: 500 }
+		);
+	if (!profile?.is_dev) return json({ error: 'Forbidden' }, { status: 403 });
+
 	try {
 		const formData = await request.formData();
 		const file = formData.get('file');
@@ -78,7 +103,7 @@ export async function POST({ request }) {
 		}
 
 		// 4) insert
-		const { error: insertErr } = await sb.from('documents').insert(rows);
+		const { error: insertErr } = await supabase.from('documents').insert(rows);
 		if (insertErr) throw insertErr;
 
 		return json({ chunks: rows.length });

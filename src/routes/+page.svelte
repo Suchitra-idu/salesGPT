@@ -1,5 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
+	import { supaFetch } from '$lib/supaFetch.js';
 	let input = '';
 	let messages = [];
 	let projects = [];
@@ -14,7 +15,7 @@
 	async function fetchProjects() {
 		loadingProjects = true;
 		try {
-			const res = await fetch('/api/projects');
+			const res = await supaFetch('/api/projects');
 			const data = await res.json();
 			projects = data.projects || [];
 		} catch (e) {
@@ -28,7 +29,7 @@
 		if (!id) return;
 		loadingProjectDetails = true;
 		try {
-			const res = await fetch(`/api/projects/${id}`);
+			const res = await supaFetch(`/api/projects/${id}`);
 			const data = await res.json();
 			selectedProject = data.project || null;
 		} catch (e) {
@@ -45,9 +46,16 @@
 		if (selectedProjectId) fetchProjectDetails(selectedProjectId);
 	}
 
+	function formatTime(date) {
+		if (!(date instanceof Date) || isNaN(date)) {
+			return '';
+		}
+		return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+	}
+
 	async function send() {
 		if (!selectedProjectId || !input) return;
-		const userMsg = { role: 'user', content: input };
+		const userMsg = { role: 'user', content: input, ts: new Date().toISOString() };
 		messages = [...messages, userMsg];
 		input = '';
 		loadingChat = true;
@@ -59,7 +67,7 @@
 		}
 		const history = messages.slice(-maxHistory);
 
-		const res = await fetch(api, {
+		const res = await supaFetch(api, {
 			method: 'POST',
 			body: JSON.stringify({
 				project_id: selectedProjectId,
@@ -71,7 +79,11 @@
 
 		const data = await res.json();
 		const aiText = data.answer || (data.error ? `Error: ${data.error}` : 'No answer');
-		messages = [...messages, { role: 'assistant', content: aiText }];
+		const sources = data.sources || [];
+		messages = [
+			...messages,
+			{ role: 'assistant', content: aiText, ts: new Date().toISOString(), sources }
+		];
 		loadingChat = false;
 	}
 
@@ -186,11 +198,24 @@
 			{:else}
 				<div class="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-6">
 					{#each messages as m, i}
-						<div class="flex" class:flex-row-reverse={m.role === 'user'}>
+						<div class="flex items-end gap-2" class:flex-row-reverse={m.role === 'user'}>
 							<div
 								class={`max-w-[75%] rounded-2xl px-4 py-2 text-base whitespace-pre-line shadow-sm ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'mr-auto bg-gray-100 text-gray-900'}`}
+								tabindex="0"
+								aria-label={m.role === 'user' ? 'User message' : 'Assistant message'}
 							>
 								{m.content}
+								{#if m.sources && m.sources.length > 0}
+									<div class="mt-3 pt-2 border-t border-gray-200">
+										<h4 class="font-semibold text-xs text-gray-600 mb-1">Sources:</h4>
+										<ul class="list-disc list-inside text-xs text-gray-500">
+											{#each m.sources as source}
+												<li>{source}</li>
+											{/each}
+										</ul>
+									</div>
+								{/if}
+								<span class="block text-xs text-gray-400 mt-1 text-right">{formatTime(new Date(m.ts))}</span>
 							</div>
 						</div>
 					{/each}
