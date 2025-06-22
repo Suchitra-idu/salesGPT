@@ -6,11 +6,12 @@ const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false }
 });
 
-export async function GET() {
+export async function GET({ params }) {
   try {
-    const { data, error } = await sb.from('projects').select('id, name').order('created_at', { ascending: false });
+    const { id } = params;
+    const { data, error } = await sb.from('projects').select('*').eq('id', id).single();
     if (error) throw error;
-    return json({ projects: data });
+    return json({ project: data });
   } catch (err) {
     console.error(err);
     return json({ error: 'Server error', detail: err.message }, { status: 500 });

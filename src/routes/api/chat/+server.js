@@ -31,6 +31,7 @@ export async function POST({ request }) {
     const temperature = typeof projectData.temperature === 'number' ? projectData.temperature : 0.3;
     const maxHistoryMessages = projectData.maxHistoryMessages || 4;
     const systemPrompt = projectData.system_prompt || 'You are a helpful assistant for answering questions about project documents.';
+    const matchThreshold = typeof projectData.match_threshold === 'number' ? projectData.match_threshold : 0.3;
 
     // 1. Embed the question
     const { data: embedData } = await openai.embeddings.create({
@@ -43,7 +44,7 @@ export async function POST({ request }) {
     // 2. Search for similar document chunks using Supabase vector search
     const { data: matches, error: matchErr } = await sb.rpc('match_documents', {
       match_count: top_k,
-      match_threshold: 0.3,
+      match_threshold: matchThreshold,
       p_project: project_id,
       query_embedding: questionEmbedding
     });

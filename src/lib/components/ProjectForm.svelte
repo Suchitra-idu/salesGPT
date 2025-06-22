@@ -84,6 +84,23 @@
 		</div>
 
 		<div>
+			<label for="match-threshold" class="mb-1 block text-sm font-medium text-gray-700">
+				Similarity Threshold (0-1)
+			</label>
+			<input
+				id="match-threshold"
+				type="number"
+				step="0.01"
+				min="0"
+				max="1"
+				class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+				placeholder="0.3"
+				bind:value={project.match_threshold}
+				disabled={loading}
+			/>
+		</div>
+
+		<div>
 			<label for="max-history" class="mb-1 block text-sm font-medium text-gray-700">
 				Max History Messages
 			</label>

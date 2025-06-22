@@ -52,5 +52,6 @@ export const defaultProject = {
 	temperature: 0.3,
 	maxHistoryMessages: 4,
 	system_prompt: '',
-	status: 'active'
+	status: 'active',
+	match_threshold: 0.3
 };
