@@ -70,6 +70,10 @@
 
 	let chunkSize = 3200;
 	let embeddingModel = 'text-embedding-3-small';
+	let chunkingMethod = 'fixed';
+	let chunkOverlap = 200;
+	let semanticThresholdType = 'percentile';
+	let semanticThresholdAmount = 95.0;
 
 	function requestConfirmation(title, message, onConfirm) {
 		confirmationConfig = { title, message, onConfirm };
@@ -149,20 +153,21 @@
 		try {
 			const { data, error } = await supabase
 				.from('documents')
-				.select('doc_name, created_at')
+				.select('doc_name, created_at, config')
 				.eq('project_id', projectId)
 				.order('created_at', { ascending: false });
 
 			if (error) throw error;
 
-			// Group documents by name and get count
+			// Group documents by name and get count, also get config from first chunk
 			const docGroups = {};
 			data?.forEach((doc) => {
 				if (!docGroups[doc.doc_name]) {
 					docGroups[doc.doc_name] = {
 						name: doc.doc_name,
 						count: 0,
-						latest: doc.created_at
+						latest: doc.created_at,
+						config: doc.config // Store config from the document
 					};
 				}
 				docGroups[doc.doc_name].count++;
@@ -225,14 +230,14 @@
 		}
 	}
 
-	async function saveProject() {
-		console.log('saveProject called', newProject, editMode.project);
+	async function saveProject(payload) {
+		console.log('saveProject called', payload, editMode.project);
 		if (!selectedClientId) {
 			showError('Please select a client first');
 			return;
 		}
 
-		const errors = validateProject(newProject);
+		const errors = validateProject(payload);
 		if (errors.length > 0) {
 			showError(errors.join(', '));
 			return;
@@ -243,18 +248,19 @@
 			let data, error;
 			const isEditing = editMode.project;
 
-			// Create a safe payload for Supabase, removing fields that might not be in the DB
-			const projectPayload = { ...newProject };
-			delete projectPayload.maxHistoryMessages;
-			// The addons field is valid in the database, so we'll keep it
+			const projectPayload = {
+				name: payload.name,
+				status: payload.status,
+				inbox_id: payload.inbox_id ? parseInt(payload.inbox_id, 10) : null,
+				ai_config: payload.ai_config,
+				client_id: selectedClientId
+			};
 
-			// Ensure status is included and has a valid value
 			if (!projectPayload.status) {
 				projectPayload.status = 'active';
 			}
 
 			if (isEditing) {
-				// Update existing project
 				const result = await supabase
 					.from('projects')
 					.update(projectPayload)
@@ -263,10 +269,9 @@
 				data = result.data;
 				error = result.error;
 			} else {
-				// Create new project
 				const result = await supabase
 					.from('projects')
-					.insert([{ ...projectPayload, client_id: selectedClientId }])
+					.insert([projectPayload])
 					.select();
 				data = result.data;
 				error = result.error;
@@ -277,7 +282,6 @@
 			selectedProjectId = data[0].id;
 			selectedProject = data[0];
 
-			// Reset form
 			newProject = { ...defaultProject };
 			editMode.project = false;
 
@@ -301,7 +305,10 @@
 	function editProject() {
 		console.log('editProject called', selectedProject);
 		if (!selectedProject) return;
-		newProject = { ...selectedProject };
+		newProject = {
+			...selectedProject,
+			...(selectedProject.ai_config || {})
+		};
 		editMode.project = true;
 	}
 
@@ -381,45 +388,45 @@
 		}
 	}
 
-	async function uploadDoc() {
-		if (!selectedProjectId || !file) {
-			showError('Please select a project and file first');
-			return;
-		}
-
-		if (
-			![
-				'application/pdf',
-				'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-				'text/plain'
-			].includes(file.type)
-		) {
-			showError('Please upload a PDF, DOCX, or TXT file');
-			return;
-		}
+	async function uploadDocument() {
+		if (!file || !selectedProject) return;
 
 		loading.upload = true;
 		try {
+			// Get the current session token
+			const { data: { session } } = await supabase.auth.getSession();
+			if (!session) {
+				throw new Error('No active session found');
+			}
+
+
 			const formData = new FormData();
 			formData.append('file', file);
-			formData.append('project_id', selectedProjectId);
-			formData.append('chunk_size', chunkSize);
-			formData.append('embedding_model', embeddingModel);
+			formData.append('projectId', selectedProject.id);
+			formData.append('embeddingModel', embeddingModel);
+			formData.append('chunkingMethod', chunkingMethod);
+			formData.append('chunkSize', chunkSize);
+			formData.append('chunkOverlap', chunkOverlap);
+			formData.append('semanticThresholdType', semanticThresholdType);
+			formData.append('semanticThresholdAmount', semanticThresholdAmount);
 
-			const response = await supaFetch('/api/upload-text', {
+			const response = await fetch('/api/upload-text', {
 				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${session.access_token}`
+				},
 				body: formData
 			});
 
+			const result = await response.json();
+
 			if (!response.ok) {
-				const errorData = await response.json();
-				throw new Error(errorData.error || `HTTP ${response.status}`);
+				throw new Error(result.error || 'Upload failed');
 			}
 
-			const data = await response.json();
-			showSuccess(`Document uploaded successfully! Processed ${data.chunks} chunks`);
+			showSuccess(result.message || 'Document uploaded successfully');
 			file = null;
-			await loadDocuments(selectedProjectId);
+			await loadDocuments(selectedProject.id);
 		} catch (error) {
 			showError('Upload failed: ' + error.message);
 		} finally {
@@ -493,7 +500,6 @@
 			clientWindow = true;
 		}
 	}
-
 	onMount(loadClients);
 </script>
 
@@ -577,19 +583,24 @@
 			{#if documentWindow}
 				<DocumentsSection
 					{documents}
-					bind:file
+					{file}
 					{loading}
 					{selectedProject}
 					bind:chunkSize
 					bind:embeddingModel
+					bind:chunkingMethod
+					bind:chunkOverlap
+					bind:semanticThresholdType
+					bind:semanticThresholdAmount
 					{onFileSelect}
-					onUpload={uploadDoc}
+					onUpload={uploadDocument}
 					onDeleteDocument={(docName) =>
 						requestConfirmation(
-							`Delete ${docName}?`,
-							`Are you sure you want to delete all versions of "${docName}"?`,
+							'Delete Document',
+							`Are you sure you want to delete "${docName}"? This action cannot be undone.`,
 							() => deleteDocument(docName)
-						)}
+						)
+					}
 					{formatDate}
 				/>
 			{/if}

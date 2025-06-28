@@ -46,12 +46,6 @@ export const defaultClient = {
 
 export const defaultProject = {
 	name: '',
-	plan: '',
-	addons: [],
-	llm_model: 'gpt-4o-mini',
-	temperature: 0.3,
-	maxHistoryMessages: 4,
-	system_prompt: '',
 	status: 'active',
-	match_threshold: 0.3
+	inbox_id: ''
 };

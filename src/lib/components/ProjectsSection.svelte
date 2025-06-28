@@ -15,6 +15,7 @@
 	export let onDeleteProject = () => {};
 	export let onSaveProject = () => {};
 	export let onCancelEdit = () => {};
+	let estimatedTokens = 100000;
 </script>
 
 <section class="rounded-lg border bg-white shadow-sm">
@@ -27,6 +28,7 @@
 				Manage projects for {selectedClient?.name}
 			</p>
 		</div>
+		
 
 		{#if selectedProject}
 			<div class="mt-4 flex gap-2 sm:mt-0">
@@ -71,6 +73,7 @@
 					<label for="project-select" class="mb-2 block text-sm font-medium text-gray-700">
 						Select Project
 					</label>
+					
 					<select
 						id="project-select"
 						bind:value={selectedProjectId}
@@ -81,37 +84,21 @@
 						<option value="">Choose a project...</option>
 						{#each projects as project}
 							<option value={project.id}
-								>{project.name} ({project.plan})</option
+								>{project.name} ({project.status})</option
 							>
 						{/each}
 					</select>
 				</div>
 
-				{#if selectedProject}
-					<div class="flex-1 rounded-md bg-gray-50 p-4">
-						<h4 class="mb-2 font-medium text-gray-900">Project Details</h4>
-						<div class="space-y-1 text-sm text-gray-600">
-							<p>
-								<span class="font-medium">Plan:</span>
-								{selectedProject.plan}
-							</p>
-							<p>
-								<span class="font-medium">Model:</span>
-								{selectedProject.llm_model}
-							</p>
-							<p>
-								<span class="font-medium">Status:</span>
-								{selectedProject.status}
-							</p>
-						</div>
-					</div>
-				{/if}
+
 			</div>
+
 		{:else if !loading.projects}
 			<div class="py-8 text-center text-gray-500">
 				<p>No projects found. Create your first project below.</p>
 			</div>
 		{/if}
+		
 
 		<!-- Project Form -->
 		<ProjectForm

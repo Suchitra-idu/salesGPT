@@ -161,27 +161,17 @@
 				{:else if selectedProject}
 					<div class="mt-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
 						<div class="mb-1 text-sm text-gray-700">
-							<span class="font-medium">Model:</span>
-							{selectedProject.llm_model}
-						</div>
-						<div class="mb-1 text-sm text-gray-700">
 							<span class="font-medium">Temperature:</span>
-							{selectedProject.temperature}
+							{selectedProject.ai_config.temperature}
 						</div>
 						<div class="mb-1 text-sm text-gray-700">
 							<span class="font-medium">Similarity Threshold:</span>
-							{selectedProject.match_threshold}
+							{selectedProject.ai_config.similarity_threshold}
 						</div>
 						<div class="mb-1 text-sm text-gray-700">
 							<span class="font-medium">Status:</span>
 							{selectedProject.status}
 						</div>
-						{#if selectedProject.system_prompt}
-							<div class="mt-2 text-sm text-gray-700">
-								<span class="font-medium">System Prompt:</span>
-								<span class="text-gray-500 italic">{selectedProject.system_prompt}</span>
-							</div>
-						{/if}
 					</div>
 				{/if}
 			</div>
