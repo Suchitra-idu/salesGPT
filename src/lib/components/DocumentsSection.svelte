@@ -116,15 +116,15 @@
 				{#if showChunkParams}
 					<div>
 						<label for="chunk-size" class="mb-1 block text-sm font-medium text-gray-700">Chunk Size (characters)</label>
-						<input
-							id="chunk-size"
-							type="number"
-							class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-							bind:value={chunkSize}
-							step="100"
-							min="100"
-						/>
-					</div>
+					<input
+						id="chunk-size"
+						type="number"
+						class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+						bind:value={chunkSize}
+						step="100"
+						min="100"
+					/>
+				</div>
 					<div>
 						<label for="chunk-overlap" class="mb-1 block text-sm font-medium text-gray-700">Chunk Overlap (characters)</label>
 						<input

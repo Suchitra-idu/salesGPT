@@ -22,7 +22,9 @@
 		vector_top_k: 5, // for vector memory retrieval
 		temperature: 0.3,
 		similarity_threshold: 0.3,
-		system_prompt: ''
+		system_prompt: '',
+		max_conversation_messages: 20, // New field for conversation limit
+		use_router: true, // Add default use_router
 	};
 	export let loading = false;
 	export let editMode = false;
@@ -108,6 +110,9 @@
 		google: 'Google Gemini and other models. Good for enterprise.'
 	};
 
+	// Help text for router
+	const routerHelp = 'If enabled, the system will use the advanced router to decide how to answer each question. If disabled, the workflow will use only memory context.';
+
 	// Parameter help texts
 	const parameterHelp = {
 		mmr_diversity: 'Controls diversity vs relevance trade-off. Higher values increase diversity.',
@@ -154,7 +159,9 @@
 		model_name: project.model_name,
 		rag_top_k: project.rag_top_k,
 		temperature: project.temperature,
-		similarity_threshold: project.similarity_threshold
+		similarity_threshold: project.similarity_threshold,
+		max_conversation_messages: project.max_conversation_messages,
+		use_router: typeof project.use_router === 'boolean' ? project.use_router : true,
 	};
 </script>
 
@@ -286,6 +293,13 @@
 							{/each}
 						</select>
 						<div class="text-xs text-gray-500 mt-1">{memoryTypeHelp[project.memory_type]}</div>
+						
+						<!-- Router Toggle -->
+						<div class="mt-3 flex items-center gap-2">
+							<label for="router-toggle" class="text-sm font-medium text-gray-700">Use Router</label>
+							<input id="router-toggle" type="checkbox" bind:checked={project.use_router} disabled={loading} />
+						</div>
+						<div class="text-xs text-gray-500 mt-1">{routerHelp}</div>
 						
 						<!-- Window Memory Parameters -->
 						{#if project.memory_type === 'window'}
@@ -527,6 +541,25 @@
 						/>
 						<div class="text-xs text-gray-500 mt-1">
 							Minimum similarity score for a document to be considered relevant.
+						</div>
+					</div>
+					<div>
+						<label for="max-conversation-messages" class="mb-1 block text-sm font-medium text-gray-700">
+							Max Conversation Messages (5-100)
+						</label>
+						<input
+							id="max-conversation-messages"
+							type="number"
+							step="1"
+							min="5"
+							max="100"
+							class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+							placeholder="20"
+							bind:value={project.max_conversation_messages}
+							disabled={loading}
+						/>
+						<div class="text-xs text-gray-500 mt-1">
+							Maximum number of conversation messages to keep in database. Lower values reduce storage costs.
 						</div>
 					</div>
 				</div>

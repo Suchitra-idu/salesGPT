@@ -19,8 +19,6 @@ DROP COLUMN IF EXISTS match_threshold;
 CREATE TABLE IF NOT EXISTS summarization_memory (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
-    entity_type TEXT, -- e.g., 'conversation', 'document', etc.
-    entity_id UUID,   -- ID of the entity this summary is for
     summary TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );

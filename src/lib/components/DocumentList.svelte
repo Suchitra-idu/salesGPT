@@ -10,7 +10,7 @@
 
 {#if documents.length > 0}
 	<div class="space-y-3">
-		{#each documents as doc}
+				{#each documents as doc}
 			<div class="flex items-center justify-between rounded-md border border-gray-200 p-4">
 				<div class="flex-1">
 					<h4 class="font-medium text-gray-900">{doc.name}</h4>
@@ -20,7 +20,7 @@
 							<span class="mx-2">•</span>
 							<span>Updated: {formatDate(doc.latest)}</span>
 						{/if}
-					</div>
+								</div>
 					{#if doc.config}
 						<div class="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded">
 							<div class="grid grid-cols-2 gap-2">
@@ -54,16 +54,16 @@
 						</div>
 					{/if}
 				</div>
-				<button
-					type="button"
+								<button
+									type="button"
 					class="ml-4 text-red-600 hover:text-red-800 text-sm font-medium"
-					on:click={() => onDelete(doc.name)}
+									on:click={() => onDelete(doc.name)}
 					disabled={loading.delete}
 				>
 					Delete
-				</button>
-			</div>
-		{/each}
+								</button>
+							</div>
+				{/each}
 	</div>
 {:else if !loading}
 	<div class="text-center py-8 text-gray-500">

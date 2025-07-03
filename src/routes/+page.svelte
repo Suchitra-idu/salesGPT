@@ -1,6 +1,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { supaFetch } from '$lib/supaFetch.js';
+	import { v4 as uuidv4 } from 'uuid';
 	let input = '';
 	let messages = [];
 	let projects = [];
@@ -9,6 +10,8 @@
 	let loadingProjects = false;
 	let loadingProjectDetails = false;
 	let loadingChat = false;
+	let conversationId = '';
+	let useRouter = true;
 
 	const api = '/api/chat';
 
@@ -53,38 +56,52 @@
 		return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 	}
 
+	function getOrCreateConversationId() {
+		if (!conversationId) {
+			conversationId = localStorage.getItem('conversation_id');
+			if (!conversationId) {
+				conversationId = uuidv4();
+				localStorage.setItem('conversation_id', conversationId);
+			}
+		}
+		return conversationId;
+	}
+
 	async function send() {
-		if (!selectedProjectId || !input) return;
+		if (!selectedProjectId || !input || !selectedProject) return;
 		const userMsg = { role: 'user', content: input, ts: new Date().toISOString() };
 		messages = [...messages, userMsg];
 		input = '';
 		loadingChat = true;
 
-		// Prepare history: last N messages (excluding the current input)
-		let maxHistory = 4;
-		if (selectedProject && selectedProject.maxHistoryMessages) {
-			maxHistory = selectedProject.maxHistoryMessages;
+		try {
+			const res = await supaFetch(api, {
+				method: 'POST',
+				body: JSON.stringify({
+					inbox_id: selectedProject.inbox_id,
+					question: userMsg.content,
+					conversation_id: '1',
+					use_router: useRouter
+				}),
+				headers: { 'Content-Type': 'application/json' }
+			});
+
+			const data = await res.json();
+			const aiText = data.answer || (data.error ? `Error: ${data.error}` : 'No answer');
+			const sources = data.sources || [];
+			messages = [
+				...messages,
+				{ role: 'assistant', content: aiText, ts: new Date().toISOString(), sources }
+			];
+		} catch (error) {
+			console.error('Chat error:', error);
+			messages = [
+				...messages,
+				{ role: 'assistant', content: 'Sorry, there was an error processing your request.', ts: new Date().toISOString() }
+			];
+		} finally {
+			loadingChat = false;
 		}
-		const history = messages.slice(-maxHistory);
-
-		const res = await supaFetch(api, {
-			method: 'POST',
-			body: JSON.stringify({
-				project_id: selectedProjectId,
-				question: userMsg.content,
-				history
-			}),
-			headers: { 'Content-Type': 'application/json' }
-		});
-
-		const data = await res.json();
-		const aiText = data.answer || (data.error ? `Error: ${data.error}` : 'No answer');
-		const sources = data.sources || [];
-		messages = [
-			...messages,
-			{ role: 'assistant', content: aiText, ts: new Date().toISOString(), sources }
-		];
-		loadingChat = false;
 	}
 
 	onMount(fetchProjects);
@@ -139,6 +156,11 @@
 						{/if}
 					</div>
 				</div>
+				<!-- Router toggle -->
+				<div class="mt-4 flex items-center gap-2">
+					<label for="router-toggle" class="text-sm font-medium text-gray-700">Use Router</label>
+					<input id="router-toggle" type="checkbox" bind:checked={useRouter} />
+				</div>
 				{#if loadingProjectDetails}
 					<div class="mt-2 flex items-center gap-2 text-gray-500">
 						<svg
@@ -161,12 +183,28 @@
 				{:else if selectedProject}
 					<div class="mt-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
 						<div class="mb-1 text-sm text-gray-700">
-							<span class="font-medium">Temperature:</span>
-							{selectedProject.ai_config.temperature}
+							<span class="font-medium">Inbox ID:</span>
+							{selectedProject.inbox_id || 'Not set'}
 						</div>
 						<div class="mb-1 text-sm text-gray-700">
-							<span class="font-medium">Similarity Threshold:</span>
-							{selectedProject.ai_config.similarity_threshold}
+							<span class="font-medium">Model:</span>
+							{selectedProject.ai_config?.model_name || 'gpt-3.5-turbo'}
+						</div>
+						<div class="mb-1 text-sm text-gray-700">
+							<span class="font-medium">Temperature:</span>
+							{selectedProject.ai_config?.temperature || 0.3}
+						</div>
+						<div class="mb-1 text-sm text-gray-700">
+							<span class="font-medium">Memory:</span>
+							{selectedProject.ai_config?.memory_type || 'none'}
+						</div>
+						<div class="mb-1 text-sm text-gray-700">
+							<span class="font-medium">Reranking:</span>
+							{selectedProject.ai_config?.reranking_method || 'none'}
+						</div>
+						<div class="mb-1 text-sm text-gray-700">
+							<span class="font-medium">Query Optimization:</span>
+							{selectedProject.ai_config?.query_optimization || 'semantic'}
 						</div>
 						<div class="mb-1 text-sm text-gray-700">
 							<span class="font-medium">Status:</span>
