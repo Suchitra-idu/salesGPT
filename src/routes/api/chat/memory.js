@@ -28,13 +28,12 @@ export async function getMemoryContext(
 		.slice(-windowSize);
 	console.log("Windows summeries -------- ", windowSummaries)
 
-	// Always get summary
+	// Always get summary (summarization_memory only has project_id, no conversation_id)
 	let summary = '';
 	const { data: summaryData } = await supabase
 		.from('summarization_memory')
 		.select('summary')
 		.eq('project_id', projectId)
-		.eq('conversation_id', conversationId)
 		.single();
 	if (summaryData?.summary) summary = summaryData.summary;
 
@@ -52,7 +51,6 @@ export async function getMemoryContext(
 		const conversationEmbedding = await embeddings.embedQuery(queryText);
 		const { data: vectorMemory } = await supabase.rpc('match_vector_memory', {
 			project_id: projectId,
-			conversation_id: conversationId,
 			query_embedding: conversationEmbedding,
 			match_threshold: threshold,
 			match_count: topK

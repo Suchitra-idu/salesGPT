@@ -46,6 +46,7 @@ CREATE OR REPLACE FUNCTION get_conversation_history(
 RETURNS TABLE (
     role TEXT,
     content TEXT,
+    summary TEXT,
     created_at TIMESTAMPTZ
 )
 LANGUAGE plpgsql
@@ -59,6 +60,7 @@ BEGIN
     SELECT 
         c.role,
         c.content,
+        c.summary,
         c.created_at
     FROM conversations c
     WHERE c.inbox_id = p_inbox_id

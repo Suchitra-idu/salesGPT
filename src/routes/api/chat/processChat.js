@@ -37,15 +37,43 @@ export async function processChat(supabase, projectId, question, history = [], c
 			reranking_config = {},
 			query_optimization = 'semantic',
 			query_optimization_config = {},
-			model_name = 'GPT-4.1',
+			model_name = 'gpt-4o',
 			rag_top_k = 5,
 			temperature = 0.3,
 			similarity_threshold = 0.3,
-			max_conversation_messages = 20
+			max_conversation_messages = 20,
+			router_config = undefined
 		} = aiConfig;
 
 		// Before using 'question', sanitize it
+		console.log('Original question:', question);
 		question = sanitizeInput(question);
+		console.log('Sanitized question:', question);
+
+		// 1. Fetch last N summary memories and full summary for the router
+		const N = 3;
+		let lastNSummaries = [];
+		let fullSummary = '';
+		try {
+			const { data: summaryRows } = await supabase
+				.from('summarization_memory')
+				.select('summary')
+				.eq('project_id', projectId)
+				.order('created_at', { ascending: false })
+				.limit(N);
+			lastNSummaries = (summaryRows || []).map(row => row.summary).filter(Boolean);
+			const { data: fullSummaryRow } = await supabase
+				.from('summarization_memory')
+				.select('summary')
+				.eq('project_id', projectId)
+				.order('created_at', { ascending: false })
+				.limit(1)
+				.single();
+			fullSummary = fullSummaryRow?.summary || '';
+		} catch (e) {
+			lastNSummaries = [];
+			fullSummary = '';
+		}
 
 		// 2. Get hybrid memory context
 		const memoryResult = await getMemoryContext(
@@ -66,41 +94,57 @@ export async function processChat(supabase, projectId, question, history = [], c
 		let rerankedMatches = [];
 		let embeddings;
 
+		let routerResult = { routes: [] };
 		if (useRouter) {
-			// 3. Router context: last 2 summaries + summary
-			const last2Summaries = windowSummaries.slice(-2).join('\n');
-			const routerContext = [last2Summaries, summary ? `Summary: ${summary}` : ''].filter(Boolean).join('\n');
-			const routerLLM = getLLM('GPT-4.1', 0.1);
-			let routerResult = await routeQuery(system_prompt, question, routerLLM, routerContext);
-			route = routerResult.route;
-			needs_reframe = routerResult.needs_reframe;
+			// 3. Router context: last N summaries + full summary
+			timings.routing = stepStart();
+			const routerLLM = getLLM('gpt-4o', 0.1);
+			console.log('ROUTER PROMPT:', JSON.stringify({
+				lastNSummaries,
+				fullSummary,
+				rag_metadata: router_config?.rag_metadata,
+				rag_examples: router_config?.rag_examples,
+				reframe_examples: router_config?.reframe_examples,
+				user_message: question
+			}, null, 2));
+			routerResult = await routeQuery(system_prompt, question, routerLLM, lastNSummaries, fullSummary, router_config);
+			console.log('ROUTER DECISION:', JSON.stringify(routerResult, null, 2));
 			timings.routing = stepStart() - timings.routing;
 		}
+		const routerRoutes = routerResult.routes || [];
+		const useMemory = routerRoutes.includes('memory');
+		const useRag = routerRoutes.includes('rag');
+		// Reframe should only be used when RAG is also selected
+		const useReframe = routerRoutes.includes('reframe') && useRag;
 
 		// Always use memory context, only decide on RAG
-		let last2Summaries = windowSummaries.slice(-2).join('\n');
-		if (needs_reframe) {
-			let reframeContext = [last2Summaries, summary ? `Summary: ${summary}` : ''].filter(Boolean).join('\n');
-			const reframeLLM = getLLM('GPT-4.1', 0.1);
-			const reframePrompt = `Given the following context and question, rephrase the question to be maximally clear for document retrieval.\n\nContext:\n${reframeContext}\n\nQuestion:\n${question}\n\nRephrased question:`;
+		let contextSections = [];
+		let allHistory = [];
+		const windowSize = memory_config?.window_size || 2;
+		if (useMemory) {
+			allHistory = [fullSummary, ...lastNSummaries, ...history].filter(Boolean);
+			if (fullSummary) contextSections.push(`Summary so far:\n${fullSummary}`);
+			if (lastNSummaries.length > 0) contextSections.push(`Recent summaries:\n${lastNSummaries.slice(-windowSize).join('\n')}`);
+		} else {
+			// Only use last 2 turns and the question
+			allHistory = history.slice(-2);
+			if (allHistory.length > 0) contextSections.push(`Recent conversation:\n${allHistory.map(m => m.content).join('\n')}`);
+		}
+		let chatHistory = allHistory.slice(-max_conversation_messages);
+
+		if (useReframe) {
+			timings.reframe = stepStart();
+			const reframeLLM = getLLM('gpt-4o', 0.1);
+			const reframePrompt = `Given the following context and question, rephrase the question to be maximally clear for document retrieval.\n\nContext:\n${contextSections.join('\n')}\n\nQuestion:\n${question}\n\nRephrased question:`;
 			const reframeResp = await reframeLLM.invoke([{ role: 'human', content: reframePrompt }]);
 			reframedQuestion = reframeResp.content.trim();
+			timings.reframe = stepStart() - timings.reframe;
 		}
 
-		if (route === 'rag') {
+		if (useRag) {
+			timings.rag = stepStart();
 			embeddings = getEmbeddings('text-embedding-3-small');
-			let searchQuery;
-			if (needs_reframe) {
-				// If reframed, use only the reframed question for RAG
-				searchQuery = reframedQuestion;
-			} else {
-				// If not reframed, use summary and last2Summaries in the RAG query
-				let contextParts = [];
-				if (summary) contextParts.push(summary);
-				if (last2Summaries) contextParts.push(last2Summaries);
-				contextParts.push(`Question: ${reframedQuestion}`);
-				searchQuery = contextParts.filter(Boolean).join('\n\n');
-			}
+			let searchQuery = useReframe ? reframedQuestion : question;
 			const questionEmbedding = await embeddings.embedQuery(searchQuery);
 			const { data: matches, error: matchErr } = await supabase.rpc('match_documents', {
 				match_count: rag_top_k,
@@ -119,61 +163,80 @@ export async function processChat(supabase, projectId, question, history = [], c
 				? [...new Set(rerankedMatches.map(m => m.doc_name))] 
 				: [];
 			usedRag = true;
-		} else {
-			usedRag = false;
+			timings.rag = stepStart() - timings.rag;
 		}
 
 		// 7. Compose final prompt and get answer
-		let allHistory = [];
-		let contextSections = [];
-		const windowSize = memory_config?.window_size || 2;
-		if (memory_type === 'summary') {
-			allHistory = [summary, ...windowSummaries, ...history].filter(Boolean);
-			if (summary) contextSections.push(`Summary so far:\n${summary}`);
-			if (windowSummaries.length > 0) contextSections.push(`Recent summaries:\n${windowSummaries.slice(-windowSize).join('\n')}`);
-		} else if (memory_type === 'window') {
-			allHistory = [summary, ...windowSummaries, ...history].filter(Boolean);
-			if (summary) contextSections.push(`Summary so far:\n${summary}`);
-			if (windowSummaries.length > 0) contextSections.push(`Recent summaries:\n${windowSummaries.slice(-windowSize).join('\n')}`);
-			if (history.length > 0) {
-				const recentHistory = history.slice(-windowSize).map(m => `${m.role}: ${m.content}`).join('\n');
-				contextSections.push(`Recent conversation:\n${recentHistory}`);
-			}
-		} else if (memory_type === 'vector') {
-			// For vector memory, use vectorContext as primary, plus recent windowSummaries/history for flow
-			allHistory = [...windowSummaries, ...history];
-			if (vectorContext) contextSections.push(`Vector memory:\n${vectorContext}`);
-			if (windowSummaries.length > 0) contextSections.push(`Recent summaries:\n${windowSummaries.join('\n')}`);
-		} else {
-			allHistory = [...windowSummaries, ...history];
-			if (windowSummaries.length > 0) contextSections.push(`Recent summaries:\n${windowSummaries.join('\n')}`);
-		}
-		let chatHistory = allHistory.slice(-max_conversation_messages);
-
+		timings.llm = stepStart();
 		let answer;
 		let turnSummary = null;
 		// Always combine answer and per-turn summary in one LLM call
 		const llm = getLLM(model_name, temperature);
-		let ragSection = ragContext ? `Context:\n${ragContext}` : '';
+		
+		// Build a single comprehensive system prompt
+		let systemContent = system_prompt;
+		if (contextSections.length > 0) {
+			systemContent += '\n\n' + contextSections.join('\n\n');
+		}
+		if (ragContext) {
+			systemContent += '\n\nRelevant context:\n' + ragContext;
+		}
+		
+		console.log('MAIN LLM PROMPT:', JSON.stringify({
+			systemContent,
+			question,
+			contextSections,
+			ragContext
+		}, null, 2));
+		
+		// Before calling main LLM, log the final string prompt
+		console.log('MAIN LLM FINAL PROMPT STRING:\n' + [
+			{ role: 'system', content: systemContent },
+			{ role: 'user', content: question },
+			{ role: 'system', content: 'Please answer the question above.\n\nAfter your answer, write a concise summary of this Q&A turn (user question and your answer) in under 100 characters.\n\nRespond in JSON:\n{\n  "answer": "...",\n  "turn_summary": "..."\n}' }
+		].map(p => `Role: ${p.role}\nContent:\n${p.content}\n`).join('\n'));
+		
 		const prompt = [
-			{ role: 'system', content: system_prompt },
-			...contextSections.map(content => ({ role: 'system', content })),
-			...(ragSection ? [{ role: 'system', content: ragSection }] : []),
+			{ role: 'system', content: systemContent },
 			{ role: 'user', content: question },
 			{ role: 'system', content: 'Please answer the question above.\n\nAfter your answer, write a concise summary of this Q&A turn (user question and your answer) in under 100 characters.\n\nRespond in JSON:\n{\n  "answer": "...",\n  "turn_summary": "..."\n}' }
 		];
+		
+		console.log('Sending prompt to LLM:', {
+			system_prompt_length: systemContent.length,
+			question: question,
+			context_sections: contextSections.length,
+			has_rag_context: !!ragContext,
+			used_rag: usedRag,
+			model_name: model_name,
+			temperature: temperature
+		});
+		
+		console.log('Full prompt structure:', prompt.map(p => ({ role: p.role, content_length: p.content.length })));
+		
 		const resp = await llm.invoke(prompt);
+		console.log('LLM response:', {
+			content_length: resp.content.length,
+			content_preview: resp.content.substring(0, 200) + '...',
+			model_used: model_name
+		});
+		
 		try {
 			const parsed = JSON.parse(resp.content);
 			answer = parsed.answer;
 			turnSummary = parsed.turn_summary;
-		} catch {
+			console.log('Successfully parsed JSON response:', { answer_length: answer?.length, turn_summary: turnSummary });
+		} catch (parseError) {
+			console.warn('Failed to parse LLM response as JSON, using raw response:', parseError);
+			console.log('Raw response content:', resp.content);
 			answer = resp.content;
 			turnSummary = null;
 		}
+		
+		timings.llm = stepStart() - timings.llm;
 
 		// 8. Update memory if configured (as before)
-		if (memory_type === 'summary' && conversationId) {
+		if (memory_type === 'summary') {
 			let newSummary = turnSummary;
 			if (!newSummary) {
 				// fallback to old method if turnSummary not available
@@ -181,7 +244,7 @@ export async function processChat(supabase, projectId, question, history = [], c
 					.from('summarization_memory')
 					.select('summary')
 					.eq('project_id', projectId)
-					.eq('conversation_id', conversationId)
+					.eq('inbox_id', conversationId)
 					.single();
 				let summaryPrompt;
 				if (previousSummary?.summary) {
@@ -189,7 +252,7 @@ export async function processChat(supabase, projectId, question, history = [], c
 				} else {
 					summaryPrompt = `You are assisting with memory summarization for a RAG-based AI chatbot. Your goal is to maintain a concise summary of the conversation history to help the LLM retain relevant context.\n\nNew conversation exchange:\nUser: ${question}\nAI: ${answer}\n\nWrite a summary of this exchange in ${memory_config.summary_length || 200} characters or less. Focus on the most recent conversation details, as earlier context will be gradually forgotten.`;
 				}
-				const summaryLLM = getLLM('GPT-4.1', 0.1);
+				const summaryLLM = getLLM('gpt-4o', 0.1);
 				const summaryResponse = await summaryLLM.invoke([{ role: 'human', content: summaryPrompt }]);
 				newSummary = summaryResponse.content;
 			}
@@ -198,14 +261,14 @@ export async function processChat(supabase, projectId, question, history = [], c
 					.from('summarization_memory')
 					.upsert({
 						project_id: projectId,
-						conversation_id: conversationId,
+						inbox_id: conversationId,
 						summary: newSummary
 					}, {
-						onConflict: 'project_id,conversation_id'
+						onConflict: 'project_id,inbox_id'
 					});
 				if (sumError) console.error('Error saving summary memory:', sumError);
 			}
-		} else if (memory_type === 'vector' && conversationId) {
+		} else if (memory_type === 'vector') {
 			if (!embeddings) {
 				embeddings = getEmbeddings('text-embedding-3-small');
 			}

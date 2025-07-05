@@ -61,7 +61,7 @@ export function sanitizeInput(input) {
 	return input
 		.replace(/\n+/g, ' ') // collapse newlines
 		.replace(/\s{2,}/g, ' ') // collapse whitespace
-		.replace(/(ignore|disregard|forget|override|system prompt|as an ai|you are now|repeat after me|instruction:|###|---|\[\[|\]\]|<\/?[a-z][^>]*>)/gi, '')
+		.replace(/(ignore|disregard|forget|override|system prompt|as an ai|you are now|repeat after me)/gi, '')
 		.trim();
 }
 

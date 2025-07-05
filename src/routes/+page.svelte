@@ -80,7 +80,6 @@
 				body: JSON.stringify({
 					inbox_id: selectedProject.inbox_id,
 					question: userMsg.content,
-					conversation_id: '1',
 					use_router: useRouter
 				}),
 				headers: { 'Content-Type': 'application/json' }

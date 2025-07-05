@@ -55,7 +55,7 @@ export async function POST({ request }) {
 	try {
 		const body = await request.json();
 		console.log('Received /api/chat payload:', body);
-		let { inbox_id, question, conversation_id } = body;
+		let { inbox_id, question } = body;
 		if (!inbox_id || !question) {
 			return json({ error: 'Missing inbox_id or question' }, { status: 400 });
 		}
@@ -76,20 +76,26 @@ export async function POST({ request }) {
 			return json({ error: 'Project not found for this inbox', detail: projectErr?.message }, { status: 404 });
 		}
 
-		// Generate conversation ID (from frontend or fallback)
-		const conversationId = conversation_id || projectData.id;
-
 		// Get conversation history using the database function (with automatic cleanup)
 		const maxMessages = projectData.ai_config?.max_conversation_messages || 20;
-		const { data: conversationHistory, error: historyErr } = await supabase.rpc('get_conversation_history', {
-			p_project_id: projectData.id,
-			p_conversation_id: conversationId,
-			max_messages: maxMessages
-		});
-
-		if (historyErr) {
-			console.error('Error fetching conversation history:', historyErr);
-			// Continue without history if there's an error
+		let conversationHistory = [];
+		
+		try {
+			const { data: historyData, error: historyErr } = await supabase.rpc('get_conversation_history', {
+				p_inbox_id: parseInt(inbox_id),
+				max_messages: maxMessages
+			});
+			
+			if (historyErr) {
+				console.error('Error fetching conversation history:', historyErr);
+				// Continue without history if there's an error
+			} else {
+				conversationHistory = historyData || [];
+				console.log('Retrieved conversation history:', conversationHistory.length, 'messages');
+			}
+		} catch (error) {
+			console.error('Exception fetching conversation history:', error);
+			// Continue without history
 		}
 
 		// Use the new processChat function from processChat.js
@@ -97,51 +103,66 @@ export async function POST({ request }) {
 			supabase, 
 			projectData.id, 
 			question, 
-			conversationHistory || [], 
-			conversationId,
+			conversationHistory, 
+			inbox_id,
 			user.id
 		);
 
 		// Store the new conversation entry, including per-turn summary and used_rag
-		const { error: convError } = await supabase
-			.from('conversations')
-			.insert([
-				{
-					project_id: projectData.id,
-					conversation_id: conversationId,
-					content: question,
-					answer: result.answer,
-					summary: result.turn_summary || null,
-					used_rag: result.used_rag || false,
-					created_at: new Date().toISOString()
-				}
-			]);
-		if (convError) console.error('Error saving conversation:', convError);
+		try {
+			const { error: convError } = await supabase
+				.from('conversations')
+				.insert([
+					{
+						inbox_id: parseInt(inbox_id),
+						content: question,
+						summary: result.turn_summary || null,
+						created_at: new Date().toISOString()
+					},
+					{
+						inbox_id: parseInt(inbox_id),
+						content: result.answer,
+						summary: result.turn_summary || null,
+						created_at: new Date().toISOString()
+					}
+				]);
+			if (convError) console.error('Error saving conversation:', convError);
+		} catch (error) {
+			console.error('Exception saving conversation:', error);
+		}
 
 		// Save analytics
-		const { error: analyticsError } = await supabase.from('chat_analytics').insert({
-			project_id: projectData.id,
-			conversation_id: conversationId,
-			user_id: user.id,
-			timings: result.analytics.timings,
-			token_usage: result.analytics.token_usage,
-			model_name: result.analytics.model_name,
-			provider: result.analytics.provider,
-			temperature: result.analytics.temperature,
-			error: result.analytics.error || null
-		});
-		if (analyticsError) console.error('Error saving analytics:', analyticsError);
+		try {
+			const { error: analyticsError } = await supabase.from('chat_analytics').insert({
+				project_id: projectData.id,
+				conversation_id: inbox_id,
+				user_id: user.id,
+				timings: result.analytics.timings,
+				token_usage: result.analytics.token_usage,
+				model_name: result.analytics.model_name,
+				provider: result.analytics.provider,
+				temperature: result.analytics.temperature,
+				error: result.analytics.error || null
+			});
+			if (analyticsError) console.error('Error saving analytics:', analyticsError);
+		} catch (error) {
+			console.error('Exception saving analytics:', error);
+		}
 
 		// Clean up old messages using the database function
-		const { data: cleanupResult, error: cleanupErr } = await supabase.rpc('cleanup_old_conversations', {
-			p_project_id: projectData.id,
-			max_messages: maxMessages
-		});
+		try {
+			const { data: cleanupResult, error: cleanupErr } = await supabase.rpc('cleanup_old_conversations', {
+				p_inbox_id: parseInt(inbox_id),
+				max_messages: maxMessages
+			});
 
-		if (cleanupErr) {
-			console.error('Error cleaning up old messages:', cleanupErr);
-		} else if (cleanupResult > 0) {
-			console.log(`Cleaned up ${cleanupResult} old messages for project ${projectData.id}`);
+			if (cleanupErr) {
+				console.error('Error cleaning up old messages:', cleanupErr);
+			} else if (cleanupResult > 0) {
+				console.log(`Cleaned up ${cleanupResult} old messages for inbox ${inbox_id}`);
+			}
+		} catch (error) {
+			console.error('Exception cleaning up old messages:', error);
 		}
 		
 		return json(result);

@@ -25,6 +25,7 @@
 		system_prompt: '',
 		max_conversation_messages: 20, // New field for conversation limit
 		use_router: true, // Add default use_router
+		router_config: { rag_examples: [], reframe_examples: [], rag_metadata: '' },
 	};
 	export let loading = false;
 	export let editMode = false;
@@ -162,7 +163,11 @@
 		similarity_threshold: project.similarity_threshold,
 		max_conversation_messages: project.max_conversation_messages,
 		use_router: typeof project.use_router === 'boolean' ? project.use_router : true,
+		router_config: project.router_config,
 	};
+
+	// Add default router_config if not present
+	$: project.router_config = project.router_config || { rag_examples: [], reframe_examples: [], rag_metadata: '' };
 </script>
 
 <div class="border-t pt-6">
@@ -564,6 +569,49 @@
 					</div>
 				</div>
 			</fieldset>
+			{#if project.use_router}
+				<div class="mt-6 border-t pt-4">
+					<legend class="text-md font-semibold text-gray-800 mb-2">Router Configuration</legend>
+					<div class="mb-4">
+						<label class="block text-sm font-medium text-gray-700">RAG Metadata (describe what is in your RAG DB)</label>
+						<textarea class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" rows="2" bind:value={project.router_config.rag_metadata} placeholder="e.g. Product docs, API specs, onboarding guides..."/>
+					</div>
+					<div class="mb-4">
+						<label class="block text-sm font-medium text-gray-700">RAG Routing Examples</label>
+						<div class="space-y-2">
+							{#each project.router_config.rag_examples as ex, i}
+								<div class="flex gap-2 items-center">
+									<input class="flex-1 rounded border-gray-300" type="text" placeholder="Question" bind:value={ex.question} />
+									<select class="rounded border-gray-300" bind:value={ex.route}>
+										<option value="rag">rag</option>
+										<option value="none">none</option>
+									</select>
+									<label class="flex items-center gap-1 text-xs">
+										<input type="checkbox" bind:checked={ex.needs_reframe} /> Reframe
+									</label>
+									<button type="button" class="text-red-500" on:click={() => project.router_config.rag_examples.splice(i,1)}>✕</button>
+								</div>
+							{/each}
+							<button type="button" class="text-blue-600 text-xs mt-1" on:click={() => project.router_config.rag_examples.push({ question: '', route: 'rag', needs_reframe: false })}>+ Add Example</button>
+						</div>
+					</div>
+					<div class="mb-4">
+						<label class="block text-sm font-medium text-gray-700">Reframing Examples</label>
+						<div class="space-y-2">
+							{#each project.router_config.reframe_examples as ex, i}
+								<div class="flex gap-2 items-center">
+									<input class="flex-1 rounded border-gray-300" type="text" placeholder="Question" bind:value={ex.question} />
+									<label class="flex items-center gap-1 text-xs">
+										<input type="checkbox" bind:checked={ex.needs_reframe} /> Reframe
+									</label>
+									<button type="button" class="text-red-500" on:click={() => project.router_config.reframe_examples.splice(i,1)}>✕</button>
+								</div>
+							{/each}
+							<button type="button" class="text-blue-600 text-xs mt-1" on:click={() => project.router_config.reframe_examples.push({ question: '', needs_reframe: true })}>+ Add Example</button>
+						</div>
+					</div>
+				</div>
+			{/if}
 			<div class="mt-4 flex gap-2">
 				<button
 					type="button"
