@@ -98,7 +98,7 @@
 		try {
 			const { data, error } = await supabase
 				.from('clients')
-				.select('*')
+				.select('id, name, email, phone, company, created_at')
 				.order('created_at', { ascending: false });
 
 			if (error) throw error;
@@ -123,7 +123,7 @@
 		try {
 			const { data, error } = await supabase
 				.from('projects')
-				.select('*')
+				.select('id, name, status, inbox_id, ai_config, created_at')
 				.eq('client_id', clientId)
 				.order('created_at', { ascending: false });
 
@@ -183,7 +183,6 @@
 
 	// CRUD operations
 	async function saveClient() {
-		console.log('saveClient called', newClient, editMode.client);
 		const errors = validateClient(newClient);
 		if (errors.length > 0) {
 			showError(errors.join(', '));
@@ -231,7 +230,6 @@
 	}
 
 	async function saveProject(payload) {
-		console.log('saveProject called', payload, editMode.project);
 		if (!selectedClientId) {
 			showError('Please select a client first');
 			return;
@@ -296,14 +294,12 @@
 
 	// Edit functions
 	function editClient() {
-		console.log('editClient called', selectedClient);
 		if (!selectedClient) return;
 		newClient = { ...selectedClient };
 		editMode.client = true;
 	}
 
 	function editProject() {
-		console.log('editProject called', selectedProject);
 		if (!selectedProject) return;
 		newProject = {
 			...selectedProject,
@@ -313,7 +309,6 @@
 	}
 
 	function cancelEdit(type) {
-		console.log('cancelEdit called', type);
 		if (type === 'client') {
 			newClient = { ...defaultClient };
 			editMode.client = false;
@@ -325,7 +320,6 @@
 
 	// Delete functions
 	async function deleteClient() {
-		console.log('deleteClient called', selectedClientId);
 		loading.delete = true;
 		try {
 			const { error } = await supabase.from('clients').delete().eq('id', selectedClientId);
@@ -348,7 +342,6 @@
 	}
 
 	async function deleteProject() {
-		console.log('deleteProject called', selectedProjectId);
 		loading.delete = true;
 		try {
 			const { error } = await supabase.from('projects').delete().eq('id', selectedProjectId);
@@ -368,7 +361,6 @@
 	}
 
 	async function deleteDocument(docName) {
-		console.log('deleteDocument called', docName);
 		loading.delete = true;
 		try {
 			const { error } = await supabase
@@ -469,13 +461,11 @@
 
 	// Status management
 	function showSuccess(message) {
-		console.log('showSuccess called', message);
 		status = { type: 'success', message };
 		setTimeout(() => (status = null), 5000);
 	}
 
 	function showError(message) {
-		console.log('showError called', message);
 		status = { type: 'error', message };
 		setTimeout(() => (status = null), 8000);
 	}

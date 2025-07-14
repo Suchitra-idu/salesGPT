@@ -31,26 +31,8 @@ export async function POST({ request }) {
 		return json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
 	}
 
-	const authHeader = request.headers.get('authorization');
-	const jwt = authHeader?.replace('Bearer ', '');
-	if (!jwt) return json({ error: 'Unauthorized' }, { status: 401 });
-
-	const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
-		global: { headers: { Authorization: `Bearer ${jwt}` } },
-		auth: { persistSession: false }
-	});
-
-	const { data: { user }, error: userError } = await supabase.auth.getUser();
-	if (userError || !user) return json({ error: 'Unauthorized' }, { status: 401 });
-
-	const { data: profile, error: profileError } = await supabase
-		.from('profiles')
-		.select('is_dev')
-		.eq('id', user.id)
-		.single();
-
-	if (profileError) return json({ error: 'Database error checking profile', detail: profileError.message }, { status: 500 });
-	if (!profile?.is_dev) return json({ error: 'Forbidden' }, { status: 403 });
+	// Create Supabase client without JWT for Chatwoot integration
+	const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
 
 	try {
 		const body = await request.json();
@@ -88,17 +70,36 @@ export async function POST({ request }) {
 		let conversationHistory = [];
 		
 		try {
-			// Get or create chat session first
-			const { data: chatSessionData, error: chatSessionErr } = await supabase.rpc('get_or_create_chat', {
-				p_project_id: projectData.id,
-				p_inbox_id: parseInt(inbox_id),
-				p_chat_id: chat_id
-			});
+					// Get or create chat session first
+		const { data: chatSessionData, error: chatSessionErr } = await supabase.rpc('get_or_create_chat', {
+			p_project_id: projectData.id,
+			p_inbox_id: parseInt(inbox_id),
+			p_chat_id: chat_id
+		});
+		
+		if (chatSessionErr) {
+			console.error('Error getting/creating chat session:', chatSessionErr);
+			return json({ error: 'Failed to get/create chat session' }, { status: 500 });
+		}
+		
+		// Check chat status - if in human takeover, don't process
+		const { data: chatData, error: chatErr } = await supabase
+			.from('chats')
+			.select('status, takeover_reason')
+			.eq('id', chatSessionData)
+			.single();
 			
-			if (chatSessionErr) {
-				console.error('Error getting/creating chat session:', chatSessionErr);
-				// Continue without chat session if there's an error
-			}
+		if (chatErr) {
+			console.error('Error checking chat status:', chatErr);
+			// Continue processing if we can't check status
+		} else if (chatData && chatData.status === 'human_takeover') {
+			console.log('Chat is in human takeover mode, skipping AI processing');
+			return json({ 
+				answer: 'This conversation has been transferred to a human agent. Please wait for their response.',
+				chat_status: 'human_takeover',
+				takeover_reason: chatData.takeover_reason
+			});
+		}
 			
 			// Fetch only the last N conversation turns (each turn = 1 row with content + answer)
 			const { data: historyData, error: historyErr } = await supabase
@@ -157,7 +158,7 @@ export async function POST({ request }) {
 			question, 
 			conversationHistory, 
 			chat_id,
-			user.id,
+			null, // No user ID for Chatwoot
 			true, // useRouter
 			parseInt(inbox_id)
 		);
@@ -183,13 +184,35 @@ export async function POST({ request }) {
 			console.error('Exception saving conversation:', error);
 		}
 
-		// Save analytics
+		// Handle handoff if needed
+		if (result.should_handoff) {
+			try {
+				const { error: handoffError } = await supabase
+					.from('chats')
+					.update({
+						status: 'human_takeover',
+						takeover_reason: result.handoff_reason,
+						updated_at: new Date().toISOString()
+					})
+					.eq('id', chatSessionData);
+				
+				if (handoffError) {
+					console.error('Error updating chat status for handoff:', handoffError);
+				} else {
+					console.log('Chat marked for human takeover:', result.handoff_reason);
+				}
+			} catch (error) {
+				console.error('Exception updating chat status:', error);
+			}
+		}
+
+		// Save analytics (without user_id for Chatwoot)
 		try {
 			console.log('SERVER - Saving analytics with token_usage:', result.analytics.token_usage);
 			const { error: analyticsError } = await supabase.from('chat_analytics').insert({
 				project_id: projectData.id,
 				conversation_id: inbox_id,
-				user_id: user.id,
+				user_id: null, // No user ID for Chatwoot
 				timings: result.analytics.timings,
 				token_usage: result.analytics.token_usage,
 				model_name: result.analytics.model_name,

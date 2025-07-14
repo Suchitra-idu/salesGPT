@@ -15,7 +15,6 @@
 	export let onDeleteProject = () => {};
 	export let onSaveProject = () => {};
 	export let onCancelEdit = () => {};
-	let estimatedTokens = 100000;
 </script>
 
 <section class="rounded-lg border bg-white shadow-sm">
@@ -35,10 +34,7 @@
 				<button
 					type="button"
 					class="inline-flex items-center gap-1 rounded-md bg-yellow-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-yellow-600 focus:ring-2 focus:ring-yellow-400 focus:outline-none"
-					on:click={() => {
-						console.log('Edit project button clicked');
-						onEditProject();
-					}}
+					on:click={onEditProject}
 				>
 					<Pencil class="h-4 w-4" />
 					<span>Edit</span>
@@ -47,10 +43,7 @@
 				<button
 					type="button"
 					class="inline-flex items-center gap-1 rounded-md bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-					on:click={() => {
-						console.log('Delete project button clicked');
-						onDeleteProject();
-					}}
+					on:click={onDeleteProject}
 					disabled={loading.delete}
 				>
 					{#if loading.delete}

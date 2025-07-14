@@ -115,10 +115,7 @@
 		<button
 			type="button"
 			class="inline-flex items-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-			on:click={() => {
-				console.log('ClientForm save button clicked', client);
-				onSave();
-			}}
+			on:click={onSave}
 			disabled={loading}
 		>
 			{#if loading}
@@ -133,10 +130,7 @@
 			<button
 				type="button"
 				class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
-				on:click={() => {
-					console.log('ClientForm cancel button clicked');
-					onCancel();
-				}}
+				on:click={onCancel}
 			>
 				Cancel
 			</button>

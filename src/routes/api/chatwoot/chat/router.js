@@ -1,10 +1,10 @@
-// Agentic router function
+// Agentic router function with handoff logic
 export async function routeQuery(systemPrompt, question, routerLLM, lastTwoMessages = '', fullSummary = '', router_config = undefined) {
     let ragMetadata = (router_config && typeof router_config.rag_metadata === 'string') ? router_config.rag_metadata : '';
     let ragExamples = Array.isArray(router_config?.rag_examples) ? router_config.rag_examples : [];
     let reframeExamples = Array.isArray(router_config?.reframe_examples) ? router_config.reframe_examples : [];
     const promptParts = [];
-    promptParts.push(`You are a router for a RAG chatbot. Decide for each user message which of the following should be used:\n- \"rag\": Use document retrieval (RAG) if the question is about something in the RAG database.\n- \"memory\": Use summary memory if the question needs context from the conversation.\n- \"reframe\": Rephrase the question for better RAG retrieval if it is vague or refers to previous context. IMPORTANT: Only include \"reframe\" if you also include \"rag\".`);
+    promptParts.push(`You are a router for a RAG chatbot. Decide for each user message which of the following should be used:\n- \"rag\": Use document retrieval (RAG) if the question is about something in the RAG database.\n- \"memory\": Use summary memory if the question needs context from the conversation.\n- \"reframe\": Rephrase the question for better RAG retrieval if it is vague or refers to previous context. IMPORTANT: Only include \"reframe\" if you also include \"rag\".\n- \"handoff\": Transfer to human agent if the question is complex, requires personal assistance, or is outside the AI's capabilities.`);
     promptParts.push(`RAG database contains: \"${ragMetadata}\"`);
     if (lastTwoMessages) {
         promptParts.push(`Recent conversation:\n${lastTwoMessages}`);
@@ -25,7 +25,7 @@ export async function routeQuery(systemPrompt, question, routerLLM, lastTwoMessa
         }
     }
     promptParts.push(`User message: \"${question}\"`);
-    promptParts.push(`\nRespond as JSON:\n{\n  \"routes\": [\"reframe\", \"rag\", \"memory\"] // include any that apply\n}`);
+    promptParts.push(`\nRespond as JSON:\n{\n  \"routes\": [\"reframe\", \"rag\", \"memory\", \"handoff\"] // include any that apply\n}`);
     const routingPrompt = {
         role: 'system',
         content: promptParts.join('\n\n')

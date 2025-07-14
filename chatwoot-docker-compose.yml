@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:13
+    container_name: chatwoot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: chatwoot
+      POSTGRES_USER: chatwoot
+      POSTGRES_PASSWORD: chatwoot_password
+    volumes:
+      - chatwoot_postgres:/var/lib/postgresql/data
+    networks:
+      - chatwoot_network
+    ports:
+      - "5433:5432"  # Using 5433 to avoid conflicts with other PostgreSQL instances
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:6-alpine
+    container_name: chatwoot_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - chatwoot_redis:/data
+    networks:
+      - chatwoot_network
+    ports:
+      - "6380:6379"  # Using 6380 to avoid conflicts
+
+  # Chatwoot Database Initialization
+  chatwoot_init:
+    image: chatwoot/chatwoot:latest
+    container_name: chatwoot_init
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgresql://chatwoot:chatwoot_password@postgres:5432/chatwoot
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      RAILS_ENV: ${RAILS_ENV:-production}
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - chatwoot_uploads:/app/storage
+    networks:
+      - chatwoot_network
+    command: bundle exec rails db:create db:migrate db:seed
+    restart: "no"
+
+  # Chatwoot Web Application
+  chatwoot:
+    image: chatwoot/chatwoot:latest
+    container_name: chatwoot_app
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - chatwoot_init
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql://chatwoot:chatwoot_password@postgres:5432/chatwoot
+      REDIS_URL: redis://redis:6379
+      
+      # Application Configuration
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      FRONTEND_URL: http://192.168.1.103:9090
+      
+      # Email Configuration (optional - for password reset, etc.)
+      SMTP_ADDRESS: ${SMTP_ADDRESS:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_DOMAIN: ${SMTP_DOMAIN:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION:-plain}
+      SMTP_ENABLE_STARTTLS_AUTO: ${SMTP_ENABLE_STARTTLS_AUTO:-true}
+      
+      # File Upload Configuration
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
+      STORAGE_REGION: ${STORAGE_REGION:-}
+      
+      # Webhook Configuration
+      WEBHOOK_URL: http://192.168.1.103:9091/api/chatwoot/webhook
+      
+      # Other Settings
+      INSTALLATION_NAME: ${INSTALLATION_NAME:-"My Chatwoot Instance"}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
+      RAILS_ENV: ${RAILS_ENV:-production}
+      NODE_ENV: ${NODE_ENV:-production}
+      
+    volumes:
+      - chatwoot_uploads:/app/storage
+    networks:
+      - chatwoot_network
+    ports:
+      - "9090:3000"  # Chatwoot web interface (using 9090 to avoid conflicts)
+    command: bundle exec rails server -b 0.0.0.0 -p 3000
+
+  # Chatwoot Sidekiq (Background Jobs)
+  sidekiq:
+    image: chatwoot/chatwoot:latest
+    container_name: chatwoot_sidekiq
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgresql://chatwoot:chatwoot_password@postgres:5432/chatwoot
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      RAILS_ENV: ${RAILS_ENV:-production}
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - chatwoot_uploads:/app/storage
+    networks:
+      - chatwoot_network
+    command: bundle exec sidekiq -C config/sidekiq.yml
+
+volumes:
+  chatwoot_postgres:
+    driver: local
+  chatwoot_redis:
+    driver: local
+  chatwoot_uploads:
+    driver: local
+
+networks:
+  chatwoot_network:
+    driver: bridge 

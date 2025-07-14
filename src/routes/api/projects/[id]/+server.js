@@ -17,7 +17,7 @@ export async function GET({ request, params }) {
 	
 	try {
 		const { id } = params;
-		const { data, error } = await supabase.from('projects').select('*').eq('id', id).single();
+		const { data, error } = await supabase.from('projects').select('id, name, inbox_id, ai_config, status').eq('id', id).single();
 		if (error) throw error;
 		return json({ project: data });
 	} catch (err) {

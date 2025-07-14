@@ -118,6 +118,8 @@ export async function processChat(supabase, projectId, question, history = [], c
 		const useRag = routerRoutes.includes('rag');
 		// Reframe should only be used when RAG is also selected
 		const useReframe = routerRoutes.includes('reframe') && useRag;
+		// Check if router suggests handoff
+		const useHandoff = routerRoutes.includes('handoff');
 
 		// Always use memory context, only decide on RAG
 		let contextSections = [];
@@ -277,6 +279,38 @@ export async function processChat(supabase, projectId, question, history = [], c
 		
 		timings.llm = stepStart() - timings.llm;
 
+		// Check for handoff conditions
+		let shouldHandoff = false;
+		let handoffReason = '';
+		let confidenceScore = 1.0;
+
+		// 1. Router suggested handoff
+		if (useHandoff) {
+			shouldHandoff = true;
+			handoffReason = 'Router determined question requires human assistance';
+		}
+		
+		// 2. Low confidence in response (if we can extract it)
+		if (answer && answer.toLowerCase().includes("i can't") || 
+			answer.toLowerCase().includes("i don't know") ||
+			answer.toLowerCase().includes("i cannot help") ||
+			answer.toLowerCase().includes("i'm not sure")) {
+			confidenceScore = 0.3;
+			if (confidenceScore < 0.5) {
+				shouldHandoff = true;
+				handoffReason = 'Low confidence response detected';
+			}
+		}
+		
+		// 3. Explicit customer request for human
+		if (question.toLowerCase().includes("speak to human") ||
+			question.toLowerCase().includes("talk to agent") ||
+			question.toLowerCase().includes("real person") ||
+			question.toLowerCase().includes("human agent")) {
+			shouldHandoff = true;
+			handoffReason = 'Customer explicitly requested human agent';
+		}
+
 		// 8. Update memory if configured (simplified - summaries are already saved in conversations table)
 		if (memory_type === 'summary') {
 			// No need to save to summarization_memory table since summaries are already in conversations table
@@ -306,8 +340,11 @@ export async function processChat(supabase, projectId, question, history = [], c
 			answer,
 			sources,
 			turn_summary: turnSummary,
-			confidence_score: 1.0, // Default confidence score for now
+			confidence_score: confidenceScore,
 			used_rag: usedRag,
+			should_handoff: shouldHandoff,
+			handoff_reason: handoffReason,
+			chat_status: shouldHandoff ? 'human_takeover' : 'active',
 			config: {
 				memory_type,
 				reranking_method,

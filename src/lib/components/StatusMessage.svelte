@@ -1,13 +1,9 @@
 <script>
-	export let status = null; // Expects { type: 'success'|'error', message: string }
+	export let status = null;
 </script>
 
-{#if status && status.message}
-	<div
-		class="mb-6 rounded-md p-4 {status.type === 'success'
-			? 'border border-green-200 bg-green-50 text-green-800'
-			: 'border border-red-200 bg-red-50 text-red-800'}"
-	>
+{#if status?.message}
+	<div class="mb-6 rounded-md p-4 {status.type === 'success' ? 'border border-green-200 bg-green-50 text-green-800' : 'border border-red-200 bg-red-50 text-red-800'}">
 		<div class="flex">
 			<div class="flex-shrink-0">
 				{#if status.type === 'success'}

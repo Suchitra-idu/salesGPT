@@ -55,8 +55,7 @@
 	$: showChunkParams = chunkingMethod !== 'semantic';
 	$: showSemanticParams = chunkingMethod === 'semantic';
 
-	// Debug logging
-	$: console.log('DocumentsSection - chunkingMethod changed to:', chunkingMethod);
+
 
 	// Update threshold amount when type changes
 	$: {

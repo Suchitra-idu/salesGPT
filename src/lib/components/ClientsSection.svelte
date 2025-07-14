@@ -30,10 +30,7 @@
 				<button
 					type="button"
 					class="inline-flex items-center gap-1 rounded-md bg-yellow-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-yellow-600 focus:ring-2 focus:ring-yellow-400 focus:outline-none"
-					on:click={() => {
-						console.log('Edit client button clicked');
-						onEditClient();
-					}}
+					on:click={onEditClient}
 				>
 					<Pencil class="h-4 w-4" />
 					<span>Edit</span>
@@ -42,10 +39,7 @@
 				<button
 					type="button"
 					class="inline-flex items-center gap-1 rounded-md bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600 focus:ring-2 focus:ring-red-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-					on:click={() => {
-						console.log('Delete client button clicked');
-						onDeleteClient();
-					}}
+					on:click={onDeleteClient}
 					disabled={loading.delete}
 				>
 					{#if loading.delete}
@@ -77,9 +71,7 @@
 					>
 						<option value="">Choose a client...</option>
 						{#each clients as client}
-							<option value={client.id}
-								>{client.name} ({client.business_type || 'No type'})</option
-							>
+							<option value={client.id}>{client.name} ({client.business_type || 'No type'})</option>
 						{/each}
 					</select>
 				</div>

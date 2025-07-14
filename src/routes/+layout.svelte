@@ -10,7 +10,8 @@
 	const supabase = browser ? createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY) : null;
 
 	onMount(async () => {
-		if (supabase) {
+		if (!supabase) return;
+		
 			const { data: { session } } = await supabase.auth.getSession();
 			user = session?.user || null;
 
@@ -38,7 +39,6 @@
 				}
 				user = currentUser || null;
 			});
-		}
 	});
 
 	async function logout() {

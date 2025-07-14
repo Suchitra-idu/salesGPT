@@ -230,20 +230,16 @@ export async function POST({ request }) {
 			return json({ error: 'Missing file or projectId' }, { status: 400 });
 		}
 
-		// Fetch project configuration (for validation, not for embedding model)
+		// Fetch project configuration (for validation only)
 		const { data: project, error: projectError } = await supabase
 			.from('projects')
-			.select('ai_config')
+			.select('id')
 			.eq('id', projectId)
 			.single();
 
 		if (projectError || !project) {
 			return json({ error: 'Project not found', detail: projectError?.message }, { status: 404 });
 		}
-
-		// Use embedding model from form data, not from project config
-		// const aiConfig = project.ai_config || {};
-		// const embeddingModel = aiConfig.embedding_model || 'text-embedding-3-small';
 
 		let text;
 		if (file.type === 'application/pdf') {

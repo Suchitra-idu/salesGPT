@@ -1,5 +1,4 @@
 <script>
-	import { Trash2 } from 'lucide-svelte';
 	import LoadingSpinner from './LoadingSpinner.svelte';
 	
 	export let documents = [];
@@ -28,13 +27,9 @@
 									<span class="font-medium">Embedding:</span> 
 									<span class="ml-1">{doc.config.embedding_model || 'N/A'}</span>
 									{#if doc.config.embedding_model?.includes('sentence-transformers/')}
-										<span class="ml-1 inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-											HF
-										</span>
+										<span class="ml-1 inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">HF</span>
 									{:else if doc.config.embedding_model}
-										<span class="ml-1 inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-											OpenAI
-										</span>
+										<span class="ml-1 inline-flex items-center px-1 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">OpenAI</span>
 									{/if}
 								</div>
 								<div><span class="font-medium">Chunking:</span> {doc.config.chunking_method || 'N/A'}</div>
